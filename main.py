@@ -2,9 +2,10 @@ import os
 import xml.etree.ElementTree as ET
 
 output_counter = 0
+data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 
 
-def print_first_mention_extent(relation, entities):
+def print_first_mention_extent(relation, entities, data_type):
     global output_counter
     head = ''
     head2 = ''
@@ -23,11 +24,11 @@ def print_first_mention_extent(relation, entities):
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-2':
                     head2 = entities[sub_rel_mention.attrib['REFID']]
             
-            print(str(output_counter) + '. ' + text_to_manipulate.replace(head, "\033[1;32;0m" + head + "\033[0m").replace(head2, "\033[1;31;0m" + head2 + "\033[0m").replace('\n', ' '))
+            print(str(output_counter) + '(' + data_type + '). ' + text_to_manipulate.replace(head, "\033[1;32;0m" + head + "\033[0m").replace(head2, "\033[1;31;0m" + head2 + "\033[0m").replace('\n', ' '))
             return
 
 
-def extract_doc(subtype, root):
+def extract_doc(subtype, root, data_type):
     entities = {}
     
     # store all entity mentions in a {ID:head} dict
@@ -47,16 +48,19 @@ def extract_doc(subtype, root):
         if child.tag == 'relation':
             if (search_sub_type and 'SUBTYPE' in child.attrib and child.attrib['SUBTYPE'] == subtype) or \
                     ((not search_sub_type) and 'SUBTYPE' not in child.attrib):
-                print_first_mention_extent(child, entities)
+                print_first_mention_extent(child, entities, data_type)
 
 
 def extract_all(subtype, path):
     for subdir, dirs, files in os.walk(path):
-        for filename in files:
-            if filename.endswith(".apf.xml"):
-                tree = ET.parse(subdir + os.sep + filename)
-                root = tree.getroot()
-                extract_doc(subtype, root)
+        if 'timex2norm' in subdir:
+            for filename in files:
+                if filename.endswith(".apf.xml"):
+                    tree = ET.parse(subdir + os.sep + filename)
+                    root = tree.getroot()
+                    indices = [i for i in data_types if (os.sep + i + os.sep) in subdir]
+                    assert(len(indices) == 1)
+                    extract_doc(subtype, root, indices[0])
 
 
 def get_subtype():
