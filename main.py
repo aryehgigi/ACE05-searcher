@@ -7,8 +7,11 @@ data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 
 def print_first_mention_extent(relation, entities, data_type):
     global output_counter
-    head = ''
-    head2 = ''
+    start = 0
+    head_start = 0
+    head_start2 = 0
+    head_end = 0
+    head_end2 = 0
     
     text_to_manipulate = ''
     
@@ -19,12 +22,24 @@ def print_first_mention_extent(relation, entities, data_type):
                 if sub_rel_mention.tag == 'extent':
                     assert(sub_rel_mention[0].tag == 'charseq')
                     text_to_manipulate = sub_rel_mention[0].text
+                    start = int(sub_rel_mention[0].attrib['START'])
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-1':
-                    head = entities[sub_rel_mention.attrib['REFID']]
+                    head_start, head_end = entities[sub_rel_mention.attrib['REFID']]
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-2':
-                    head2 = entities[sub_rel_mention.attrib['REFID']]
+                    head_start2, head_end2 = entities[sub_rel_mention.attrib['REFID']]
             
-            print(str(output_counter) + '(' + data_type + '). ' + text_to_manipulate.replace(head, "\033[1;32;0m" + head + "\033[0m").replace(head2, "\033[1;31;0m" + head2 + "\033[0m").replace('\n', ' '))
+            first_head_start, last_head_start = (head_start, head_start2) if head_start < head_start2 else (head_start2, head_start)
+            first_head_end, last_head_end = (head_end, head_end2) if head_end < head_end2 else (head_end2, head_end)
+            text_to_manipulate = text_to_manipulate[:first_head_start - start] +                            \
+                                 "\033[1;32;0m" +                                                           \
+                                 text_to_manipulate[first_head_start - start: first_head_end - start + 1] + \
+                                 "\033[0m" +                                                                \
+                                 text_to_manipulate[first_head_end - start + 1: last_head_start - start] +  \
+                                 "\033[1;31;0m" +                                                           \
+                                 text_to_manipulate[last_head_start - start: last_head_end - start + 1] +   \
+                                 "\033[0m" +                                                                \
+                                 text_to_manipulate[last_head_end - start + 1:]
+            print(str(output_counter) + '(' + data_type + '). ' + text_to_manipulate.replace('\n', ' '))
             return
 
 
@@ -38,7 +53,7 @@ def extract_doc(subtype, root, data_type):
                 for text in entity_mentions:
                     if text.tag == 'head':
                         assert(text[0].tag == 'charseq')
-                        entities[entity_mentions.attrib['ID']] = text[0].text
+                        entities[entity_mentions.attrib['ID']] = int(text[0].attrib['START']), int(text[0].attrib['END'])
     
     # print all relation according to subtype
     search_sub_type = True
@@ -99,4 +114,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(r"C:\Users\inbar&aryeh\PycharmProjects\ace05_parser\data")
+    main(r"C:\Users\inbaryeh\PycharmProjects\ace05_parser\data")
