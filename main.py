@@ -1,8 +1,10 @@
 import os
+import sys
 import xml.etree.ElementTree as ET
 
 output_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
+types = {0:('ART', ['User-Owner-Inventor-Manufacturer']), 1:('GEN-AFF',['Citizen-Resident-Religion-Ethnicity', 'Org-Location']), 2:('METONOMY', []), 3:('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']), 4:('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']), 5:('PER-SOC',['Business', 'Family', 'Lasting-Personal']), 6:('PHYS',['Located', 'Near'])}
 
 
 def print_first_mention_extent(relation, entities, data_type):
@@ -78,8 +80,13 @@ def extract_all(subtype, path):
                     extract_doc(subtype, root, indices[0])
 
 
+def print_type(cur_type, subtype):
+    print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
+    print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
+    print()
+
+
 def get_subtype():
-    types = {0:('ART', ['User-Owner-Inventor-Manufacturer']), 1:('GEN-AFF',['Citizen-Resident-Religion-Ethnicity', 'Org-Location']), 2:('METONOMY', []), 3:('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']), 4:('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']), 5:('PER-SOC',['Business', 'Family', 'Lasting-Personal']), 6:('PHYS',['Located', 'Near'])}
     query = "Choose a type (by number):\n"  \
             "1. ART(artifact)\n"            \
             "2. GEN-AFF(Gen-affiliation)\n" \
@@ -102,16 +109,25 @@ def get_subtype():
         while subtype not in range(len(types[cur_type][1])):
             subtype = int(input(query)) - 1
     
-    print("Showing all search result for type=%s~subtype=%s:" % (types[cur_type][0], types[cur_type][1][subtype] if subtype is not None else 'None'))
-    print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
-    print()
+    print_types(types[cur_type][0], types[cur_type][1][subtype] if subtype is not None else 'None')
     return types[cur_type][1][subtype] if subtype is not None else None
 
 
-def main(path):
-    subtype = get_subtype()
+def main(path, cmd_subtype=None):
+    if not cmd_subtype:
+        subtype = get_subtype()
+    else:
+        subtype = cmd_subtype if cmd_subtype != 'None' else None
+        for i, (cur_type, subtypes) in types.items():
+            if subtype in subtypes:
+                print_type(cur_type, subtype if subtype is not None else 'None')
     extract_all(subtype, path)
 
 
 if __name__ == "__main__":
-    main(r"C:\Users\inbaryeh\PycharmProjects\ace05_parser\data")
+    if len(sys.argv) == 2:
+        main(sys.argv[1])
+    elif len(sys.argv) == 3:
+        main(sys.argv[1], sys.argv[2])
+    else:
+        print("bad input")
