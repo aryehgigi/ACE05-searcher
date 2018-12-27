@@ -37,11 +37,11 @@ def print_first_mention_extent(relation, entities, data_type):
             
             text_to_manipulate =                                                           \
                 text_to_manipulate[:first_head_start - start] +                            \
-                first_color +                                                           \
+                first_color +                                                              \
                 text_to_manipulate[first_head_start - start: first_head_end - start + 1] + \
                 "\033[0m" +                                                                \
                 text_to_manipulate[first_head_end - start + 1: last_head_start - start] +  \
-                second_color +                                                           \
+                second_color +                                                             \
                 text_to_manipulate[last_head_start - start: last_head_end - start + 1] +   \
                 "\033[0m" +                                                                \
                 text_to_manipulate[last_head_end - start + 1:]
