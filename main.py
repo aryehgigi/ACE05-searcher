@@ -30,15 +30,18 @@ def print_first_mention_extent(relation, entities, data_type):
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-2':
                     head_start2, head_end2 = entities[sub_rel_mention.attrib['REFID']]
             
-            first_head_start, last_head_start = (head_start, head_start2) if head_start < head_start2 else (head_start2, head_start)
-            first_head_end, last_head_end = (head_end, head_end2) if head_end < head_end2 else (head_end2, head_end)
+            first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color =   \
+                (head_start, head_start2, head_end, head_end2, "\033[1;32;0m", "\033[1;31;0m")              \
+                if head_start < head_start2 else                                                            \
+                (head_start2, head_start, head_end2, head_end, "\033[1;31;0m", "\033[1;32;0m")
+            
             text_to_manipulate =                                                           \
                 text_to_manipulate[:first_head_start - start] +                            \
-                "\033[1;32;0m" +                                                           \
+                first_color +                                                           \
                 text_to_manipulate[first_head_start - start: first_head_end - start + 1] + \
                 "\033[0m" +                                                                \
                 text_to_manipulate[first_head_end - start + 1: last_head_start - start] +  \
-                "\033[1;31;0m" +                                                           \
+                second_color +                                                           \
                 text_to_manipulate[last_head_start - start: last_head_end - start + 1] +   \
                 "\033[0m" +                                                                \
                 text_to_manipulate[last_head_end - start + 1:]
