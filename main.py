@@ -32,15 +32,16 @@ def print_first_mention_extent(relation, entities, data_type):
             
             first_head_start, last_head_start = (head_start, head_start2) if head_start < head_start2 else (head_start2, head_start)
             first_head_end, last_head_end = (head_end, head_end2) if head_end < head_end2 else (head_end2, head_end)
-            text_to_manipulate = text_to_manipulate[:first_head_start - start] +                            \
-                                 "\033[1;32;0m" +                                                           \
-                                 text_to_manipulate[first_head_start - start: first_head_end - start + 1] + \
-                                 "\033[0m" +                                                                \
-                                 text_to_manipulate[first_head_end - start + 1: last_head_start - start] +  \
-                                 "\033[1;31;0m" +                                                           \
-                                 text_to_manipulate[last_head_start - start: last_head_end - start + 1] +   \
-                                 "\033[0m" +                                                                \
-                                 text_to_manipulate[last_head_end - start + 1:]
+            text_to_manipulate =                                                           \
+                text_to_manipulate[:first_head_start - start] +                            \
+                "\033[1;32;0m" +                                                           \
+                text_to_manipulate[first_head_start - start: first_head_end - start + 1] + \
+                "\033[0m" +                                                                \
+                text_to_manipulate[first_head_end - start + 1: last_head_start - start] +  \
+                "\033[1;31;0m" +                                                           \
+                text_to_manipulate[last_head_start - start: last_head_end - start + 1] +   \
+                "\033[0m" +                                                                \
+                text_to_manipulate[last_head_end - start + 1:]
             print(str(output_counter) + '(' + data_type + '). ' + text_to_manipulate.replace('\n', ' '))
             return
 
