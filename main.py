@@ -1,10 +1,35 @@
 import os
 import sys
+import re
 import xml.etree.ElementTree as ET
 
 output_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
-types = {0:('ART', ['User-Owner-Inventor-Manufacturer']), 1:('GEN-AFF',['Citizen-Resident-Religion-Ethnicity', 'Org-Location']), 2:('METONOMY', []), 3:('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']), 4:('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']), 5:('PER-SOC',['Business', 'Family', 'Lasting-Personal']), 6:('PHYS',['Located', 'Near'])}
+types = {0:('ART', ['User-Owner-Inventor-Manufacturer']), 1:('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']), 2:('METONYMY', [None]), 3:('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']), 4:('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']), 5:('PER-SOC',['Business', 'Family', 'Lasting-Personal']), 6:('PHYS',['Located', 'Near'])}
+
+
+def print_metonymy(relation, entities, data_type, path):
+    global output_counter
+    head_start = 0
+    head_start2 = 0
+    head_end = 0
+    head_end2 = 0
+
+    output_counter += 1
+    
+    for cur_child in relation:
+        if cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-1':
+            head_start, head_end = entities[cur_child.attrib['REFID']]
+        elif cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-2':
+            head_start2, head_end2 = entities[cur_child.attrib['REFID']]
+    
+    sgm = open(path.replace('apf.xml', 'sgm')).read()
+    sgm = re.sub('<.*?>', '', sgm)
+    first = sgm[sgm.rfind('\n', 0, head_start) : head_start] + "\033[1;31;0m" + sgm[head_start : head_end + 1] + "\033[0m" + sgm[head_end + 1 : sgm.find('\n', head_end, len(sgm))]
+    second = sgm[sgm.rfind('\n', 0, head_start2) : head_start2] + "\033[1;31;0m" + sgm[head_start2 : head_end2 + 1] + "\033[0m" + sgm[head_end2 + 1 : sgm.find('\n', head_end2, len(sgm))]
+    
+    print(str(output_counter) + '(' + data_type + '). ' + "..." + first.replace('\n', '') + "..." + " <--> " + "..." + second.replace('\n', '') + "...")
+    return
 
 
 def print_first_mention_extent(relation, entities, data_type):
@@ -49,7 +74,7 @@ def print_first_mention_extent(relation, entities, data_type):
             return
 
 
-def extract_doc(subtype, root, data_type):
+def extract_doc(subtype, root, data_type, path):
     entities = {}
     
     # store all entity mentions in a {ID:head} dict
@@ -60,6 +85,7 @@ def extract_doc(subtype, root, data_type):
                     if text.tag == 'head':
                         assert(text[0].tag == 'charseq')
                         entities[entity_mentions.attrib['ID']] = int(text[0].attrib['START']), int(text[0].attrib['END'])
+                        entities[child.attrib['ID']] = int(text[0].attrib['START']), int(text[0].attrib['END'])
     
     # print all relation according to subtype
     search_sub_type = True
@@ -69,7 +95,7 @@ def extract_doc(subtype, root, data_type):
         if child.tag == 'relation':
             if (search_sub_type and 'SUBTYPE' in child.attrib and child.attrib['SUBTYPE'] == subtype) or \
                     ((not search_sub_type) and 'SUBTYPE' not in child.attrib):
-                print_first_mention_extent(child, entities, data_type)
+                print_first_mention_extent(child, entities, data_type) if search_sub_type else print_metonymy(child, entities, data_type, path)
 
 
 def extract_all(subtype, path):
@@ -81,7 +107,7 @@ def extract_all(subtype, path):
                     root = tree.getroot()
                     indices = [i for i in data_types if (os.sep + i + os.sep) in subdir]
                     assert(len(indices) == 1)
-                    extract_doc(subtype, root, indices[0])
+                    extract_doc(subtype, root, indices[0], subdir + os.sep + filename)
 
 
 def print_type(cur_type, subtype):
@@ -94,7 +120,7 @@ def get_subtype():
     query = "Choose a type (by number):\n"  \
             "1. ART(artifact)\n"            \
             "2. GEN-AFF(Gen-affiliation)\n" \
-            "3. METONOMY\n"                 \
+            "3. METONYMY\n"                 \
             "4. ORG-AFF(org-affiliation)\n" \
             "5. PART-WHOLE\n"               \
             "6. PER-SOC(person-social)\n"   \
@@ -105,7 +131,7 @@ def get_subtype():
         cur_type = int(input(query)) - 1
 
     subtype = None
-    if types[cur_type][0] != 'METONOMY':
+    if types[cur_type][0] != 'METONYMY':
         query = "Choose a subtype (by number):\n"
         for i, subtype in enumerate(types[cur_type][1]):
             query += (str(i + 1) + " " + subtype + "\n")
