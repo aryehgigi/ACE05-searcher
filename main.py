@@ -25,8 +25,12 @@ def print_metonymy(relation, entities, data_type, path):
     
     sgm = open(path.replace('apf.xml', 'sgm')).read()
     sgm = re.sub('<.*?>', '', sgm)
-    first = sgm[sgm.rfind('\n', 0, head_start) : head_start] + "\033[1;31;0m" + sgm[head_start : head_end + 1] + "\033[0m" + sgm[head_end + 1 : sgm.find('\n', head_end, len(sgm))]
-    second = sgm[sgm.rfind('\n', 0, head_start2) : head_start2] + "\033[1;31;0m" + sgm[head_start2 : head_end2 + 1] + "\033[0m" + sgm[head_end2 + 1 : sgm.find('\n', head_end2, len(sgm))]
+    first = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start): head_start],
+                                                      sgm[head_start: head_end + 1],
+                                                      sgm[head_end + 1: sgm.find('\n', head_end, len(sgm))])
+    second = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start2): head_start2],
+                                                       sgm[head_start2: head_end2 + 1],
+                                                       sgm[head_end2 + 1: sgm.find('\n', head_end2, len(sgm))])
     
     print(str(output_counter) + '(' + data_type + '). ' + "..." + first.replace('\n', '') + "..." + " <--> " + "..." + second.replace('\n', '') + "...")
     return
