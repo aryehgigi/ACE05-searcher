@@ -1,0 +1,49 @@
+8	PER ORG	Founder Student-Alum Citizen-Resident-Religion-Ethnicity Sports-Affiliation Membership Investor-Shareholder Ownership Employment 
+6	PER GPE	Founder Citizen-Resident-Religion-Ethnicity Located Near Investor-Shareholder Employment 
+4	PER PER	Citizen-Resident-Religion-Ethnicity Family Business Lasting-Personal 
+4	ORG ORG	Subsidiary Membership Investor-Shareholder Founder 
+4	ORG GPE	Subsidiary Investor-Shareholder Org-Location-Origin Founder 
+3	PER LOC	Citizen-Resident-Religion-Ethnicity Located Near 
+3	PER FAC	Located Near User-Owner-Inventor-Manufacturer 
+3	GPE GPE	Near Investor-Shareholder Geographical 
+3	GPE FAC	Near User-Owner-Inventor-Manufacturer Geographical 
+2	LOC PER	Located Near 
+2	LOC LOC	Near Geographical 
+2	LOC GPE	Near Geographical 
+2	LOC FAC	Near Geographical 
+2	GPE PER	Located Near 
+2	GPE ORG	Membership Investor-Shareholder 
+2	GPE LOC	Near Geographical 
+2	FAC PER	Located Near 
+2	FAC LOC	Near Geographical 
+2	FAC GPE	Near Geographical 
+2	FAC FAC	Near Geographical 
+1	WEA WEA	Artifact 
+1	VEH VEH	Artifact 
+1	PER WEA	User-Owner-Inventor-Manufacturer 
+1	PER VEH	User-Owner-Inventor-Manufacturer 
+1	ORG WEA	User-Owner-Inventor-Manufacturer 
+1	ORG VEH	User-Owner-Inventor-Manufacturer 
+1	ORG LOC	Org-Location-Origin 
+1	ORG FAC	User-Owner-Inventor-Manufacturer 
+1	GPE WEA	User-Owner-Inventor-Manufacturer 
+1	GPE VEH	User-Owner-Inventor-Manufacturer 
+0	WEA VEH	
+0	WEA PER	
+0	WEA ORG	
+0	WEA LOC	
+0	WEA GPE	
+0	WEA FAC	
+0	VEH WEA	
+0	VEH PER	
+0	VEH ORG	
+0	VEH LOC	
+0	VEH GPE	
+0	VEH FAC	
+0	ORG PER	
+0	LOC WEA	
+0	LOC VEH	
+0	LOC ORG	
+0	FAC WEA	
+0	FAC VEH	
+0	FAC ORG	
