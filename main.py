@@ -152,10 +152,21 @@ def main(path, cmd_subtype=None):
         subtype = get_subtype()
     else:
         subtype = cmd_subtype if cmd_subtype != 'None' else None
+        found = False
         for i, (cur_type, subtypes) in types.items():
             if subtype in subtypes:
                 print_type(cur_type, subtype if subtype is not None else 'None')
+                found = True
+        if not found:
+            print_usage()
+            return
     extract_all(subtype, path)
+
+
+def print_usage():
+    print("Usage: main.py path_to_data [subtype|None]\n"
+          "'None' means Metonymy.\n"
+          "If you omit the subtype(or None), you will be prompt to input it afterwards.")
 
 
 if __name__ == "__main__":
@@ -164,4 +175,4 @@ if __name__ == "__main__":
     elif len(sys.argv) == 3:
         main(sys.argv[1], sys.argv[2])
     else:
-        print("bad input")
+        print_usage()
