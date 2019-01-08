@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+from pathlib import Path
 import xml.etree.ElementTree as ET
 
 output_counter = 0
@@ -50,7 +51,7 @@ def print_first_mention_extent(relation, entities, data_type):
     head_end = 0
     head_end2 = 0
     
-    text_to_manipulate = ''
+    original_sentence = ''
     
     for cur_child in relation:
         if cur_child.tag == 'relation_mention':
@@ -58,7 +59,7 @@ def print_first_mention_extent(relation, entities, data_type):
             for sub_rel_mention in cur_child:
                 if sub_rel_mention.tag == 'extent':
                     assert(sub_rel_mention[0].tag == 'charseq')
-                    text_to_manipulate = sub_rel_mention[0].text
+                    original_sentence = sub_rel_mention[0].text
                     start = int(sub_rel_mention[0].attrib['START'])
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-1':
                     head_start, head_end = entities[sub_rel_mention.attrib['REFID']]
@@ -71,20 +72,20 @@ def print_first_mention_extent(relation, entities, data_type):
                 (head_start2, head_start, head_end2, head_end, "\033[1;31;0m", "\033[1;32;0m")
             
             text_to_manipulate =                                                           \
-                text_to_manipulate[:first_head_start - start] +                            \
+                original_sentence[:first_head_start - start] +                            \
                 first_color +                                                              \
-                text_to_manipulate[first_head_start - start: first_head_end - start + 1] + \
+                original_sentence[first_head_start - start: first_head_end - start + 1] + \
                 "\033[0m" +                                                                \
-                text_to_manipulate[first_head_end - start + 1: last_head_start - start] +  \
+                original_sentence[first_head_end - start + 1: last_head_start - start] +  \
                 second_color +                                                             \
-                text_to_manipulate[last_head_start - start: last_head_end - start + 1] +   \
+                original_sentence[last_head_start - start: last_head_end - start + 1] +   \
                 "\033[0m" +                                                                \
-                text_to_manipulate[last_head_end - start + 1:]
+                original_sentence[last_head_end - start + 1:]
             print(str(output_counter) + '(' + data_type + '). ' + text_to_manipulate.replace('\n', ' '))
-            return
+            return output_counter, text_to_manipulate.replace('\n', ' '), original_sentence # TODO - add Entity types
 
 
-def extract_doc(subtype, root, data_type, path):
+def extract_doc(subtype, root, data_type, path, sentences):
     entities = {}
     
     # store all entity mentions in a {ID:head} dict
@@ -105,10 +106,11 @@ def extract_doc(subtype, root, data_type, path):
         if child.tag == 'relation':
             if (search_sub_type and 'SUBTYPE' in child.attrib and child.attrib['SUBTYPE'] == subtype) or \
                     ((not search_sub_type) and 'SUBTYPE' not in child.attrib):
-                print_first_mention_extent(child, entities, data_type) if search_sub_type else print_metonymy(child, entities, data_type, path)
+                counter, colored_sentence, orig_sentence = print_first_mention_extent(child, entities, data_type) if search_sub_type else print_metonymy(child, entities, data_type, path)
+                sentences[counter] = colored_sentence, orig_sentence
 
 
-def extract_all(subtype, path):
+def extract_all(subtype, path, sentences):
     for subdir, dirs, files in os.walk(path):
         if 'timex2norm' in subdir:
             for filename in files:
@@ -117,7 +119,7 @@ def extract_all(subtype, path):
                     root = tree.getroot()
                     indices = [i for i in data_types if (os.sep + i + os.sep) in subdir]
                     assert(len(indices) == 1)
-                    extract_doc(subtype, root, indices[0], subdir + os.sep + filename)
+                    extract_doc(subtype, root, indices[0], subdir + os.sep + filename, sentences)
 
 
 def print_type(cur_type, subtype):
@@ -153,6 +155,37 @@ def get_subtype():
     return types[cur_type][1][subtype] if subtype is not None else None
 
 
+def dep_view(sentences):
+    import spacy
+    options = {'compact': True}
+    
+    lines = input("Choose line numbers (space separated), for comparision.\n")
+    if lines == 'Q':
+        return True
+    lines =[int(num) for num in lines.split()]
+    
+    nlp = spacy.load('en_core_web_sm')
+    docs = []
+    for line in lines:
+        docs.append(nlp(sentences[line][1]))
+    
+    spacy.displacy.serve(docs, style='dep', options=options)
+    # import pdb;pdb.set_trace()
+    # svg = spacy.displacy.render(docs, style='dep')
+    # html = spacy.displacy.render(docs, style='dep', page = True)
+    # mini_html = spacy.displacy.render(docs, style='dep', page = True, minify=True)
+    # mini = spacy.displacy.render(docs, style='dep', minify=True)
+    # output_path = Path('c:\\temp\\sentence.svg')
+    # output_path.open('w', encoding='utf-8').write(svg)
+    return False
+
+
+def dep_views(sentences):
+    finished = False
+    while not finished:
+        finished = dep_view(sentences)
+
+
 def main(path, cmd_subtype=None):
     if not cmd_subtype:
         subtype = get_subtype()
@@ -166,7 +199,10 @@ def main(path, cmd_subtype=None):
         if not found:
             print_usage()
             return
-    extract_all(subtype, path)
+    
+    sentences = {}
+    extract_all(subtype, path, sentences)
+    dep_view(sentences)
 
 
 def print_usage():
