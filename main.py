@@ -2,17 +2,19 @@ import os
 import sys
 import re
 from pathlib import Path
+import multiprocessing
 import xml.etree.ElementTree as ET
 
+port_inc = 5000
 output_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
-types = {0 : ('ART', ['User-Owner-Inventor-Manufacturer']),
-         1 : ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
-         2 : ('METONYMY', [None]),
-         3 : ('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']),
-         4 : ('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']),
-         5 : ('PER-SOC',['Business', 'Family', 'Lasting-Personal']),
-         6 : ('PHYS',['Located', 'Near'])}
+types = {0: ('ART', ['User-Owner-Inventor-Manufacturer']),
+         1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
+         2: ('METONYMY', [None]),
+         3: ('ORG-AFF', ['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']),
+         4: ('PART-WHOLE', ['Artifact', 'Geographical', 'Subsidiary']),
+         5: ('PER-SOC', ['Business', 'Family', 'Lasting-Personal']),
+         6: ('PHYS', ['Located', 'Near'])}
 
 
 def print_metonymy(relation, entities, data_type, path):
@@ -155,13 +157,21 @@ def get_subtype():
     return types[cur_type][1][subtype] if subtype is not None else None
 
 
-def dep_view(sentences):
+def threaded_displacy(docs, port):
+    import sys
+    import os
     import spacy
-    options = {'compact': True}
+    sys.stdout = open(os.devnull, 'w')
+    spacy.displacy.serve(docs, style='dep', options={'compact': True}, port=port)
+
+
+def dep_view(sentences):
+    global port_inc
+    import spacy
     
     lines = input("Choose line numbers (space separated), for comparision.\n")
     if lines == 'Q':
-        return True
+        return True, None
     lines =[int(num) for num in lines.split()]
     
     nlp = spacy.load('en_core_web_sm')
@@ -169,21 +179,20 @@ def dep_view(sentences):
     for line in lines:
         docs.append(nlp(sentences[line][1]))
     
-    spacy.displacy.serve(docs, style='dep', options=options)
-    # import pdb;pdb.set_trace()
-    # svg = spacy.displacy.render(docs, style='dep')
-    # html = spacy.displacy.render(docs, style='dep', page = True)
-    # mini_html = spacy.displacy.render(docs, style='dep', page = True, minify=True)
-    # mini = spacy.displacy.render(docs, style='dep', minify=True)
-    # output_path = Path('c:\\temp\\sentence.svg')
-    # output_path.open('w', encoding='utf-8').write(svg)
-    return False
+    p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc])
+    p.start()
+    port_inc += 1
+    return False, p
 
 
 def dep_views(sentences):
     finished = False
+    processes = []
     while not finished:
-        finished = dep_view(sentences)
+        finished, p = dep_view(sentences)
+        if not finished:
+            processes.append(p)
+    not_interesting = [process.terminate for process in processes]
 
 
 def main(path, cmd_subtype=None):
@@ -202,7 +211,7 @@ def main(path, cmd_subtype=None):
     
     sentences = {}
     extract_all(subtype, path, sentences)
-    dep_view(sentences)
+    dep_views(sentences)
 
 
 def print_usage():
