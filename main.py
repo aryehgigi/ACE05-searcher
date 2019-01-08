@@ -5,7 +5,13 @@ import xml.etree.ElementTree as ET
 
 output_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
-types = {0:('ART', ['User-Owner-Inventor-Manufacturer']), 1:('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']), 2:('METONYMY', [None]), 3:('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']), 4:('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']), 5:('PER-SOC',['Business', 'Family', 'Lasting-Personal']), 6:('PHYS',['Located', 'Near'])}
+types = {0 : ('ART', ['User-Owner-Inventor-Manufacturer']),
+         1 : ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
+         2 : ('METONYMY', [None]),
+         3 : ('ORG-AFF',['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']),
+         4 : ('PART-WHOLE',['Artifact', 'Geographical', 'Subsidiary']),
+         5 : ('PER-SOC',['Business', 'Family', 'Lasting-Personal']),
+         6 : ('PHYS',['Located', 'Near'])}
 
 
 def print_metonymy(relation, entities, data_type, path):
