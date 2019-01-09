@@ -51,7 +51,7 @@ def print_metonymy(relation, entities, data_type, path):
     return
 
 
-def print_first_mention_extent(relation, entities, data_type):
+def print_mentions(relation, entities, data_type, sentences):
     global output_counter
     start = 0
     head_start = 0
@@ -60,6 +60,7 @@ def print_first_mention_extent(relation, entities, data_type):
     head_end2 = 0
     
     original_sentence = ''
+    text_to_manipulate = ''
     
     for cur_child in relation:
         if cur_child.tag == 'relation_mention':
@@ -90,7 +91,7 @@ def print_first_mention_extent(relation, entities, data_type):
                 "\033[0m" +                                                                \
                 original_sentence[last_head_end - start + 1:]
             print(str(output_counter) + '(' + data_type + '). ' + text_to_manipulate.replace('\n', ' '))
-            return output_counter, text_to_manipulate.replace('\n', ' '), original_sentence # TODO - add Entity types
+            sentences[output_counter] = text_to_manipulate.replace('\n', ' '), original_sentence
 
 
 def extract_doc(subtype, root, data_type, path, sentences):
@@ -114,8 +115,8 @@ def extract_doc(subtype, root, data_type, path, sentences):
         if child.tag == 'relation':
             if (search_sub_type and 'SUBTYPE' in child.attrib and child.attrib['SUBTYPE'] == subtype) or \
                     ((not search_sub_type) and 'SUBTYPE' not in child.attrib):
-                counter, colored_sentence, orig_sentence = print_first_mention_extent(child, entities, data_type) if search_sub_type else print_metonymy(child, entities, data_type, path)
-                sentences[counter] = colored_sentence, orig_sentence
+                print_mentions(child, entities, data_type, sentences) if search_sub_type else print_metonymy(child, entities, data_type, path)
+                
 
 
 def extract_all(subtype, path, sentences):
