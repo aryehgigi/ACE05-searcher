@@ -10,13 +10,14 @@ output_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 types = {0: ('ART', ['User-Owner-Inventor-Manufacturer']),
          1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
-         2: ('METONYMY', [None]),
+         2: ('METONYMY', [None]),  # TODO - come on, is this the only way?
          3: ('ORG-AFF', ['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']),
          4: ('PART-WHOLE', ['Artifact', 'Geographical', 'Subsidiary']),
          5: ('PER-SOC', ['Business', 'Family', 'Lasting-Personal']),
          6: ('PHYS', ['Located', 'Near'])}
 
 
+# TODO - very dataset specific, should be generalized. (true for print_first_mention_extent and extract_doc as well)
 def print_metonymy(relation, entities, data_type, path):
     global output_counter
     head_start = 0
@@ -124,6 +125,7 @@ def extract_all(subtype, path, sentences):
                     extract_doc(subtype, root, indices[0], subdir + os.sep + filename, sentences)
 
 
+# TODO - remove asci art!
 def print_type(cur_type, subtype):
     print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
     print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
@@ -157,6 +159,7 @@ def get_subtype():
     return types[cur_type][1][subtype] if subtype is not None else None
 
 
+# TODO - maybe replace the entire displacy idea, either all in web or all in CLI but not half-half.
 def threaded_displacy(docs, port):
     import sys
     import os
