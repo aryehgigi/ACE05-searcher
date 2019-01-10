@@ -61,27 +61,8 @@ def bla(path):
         copy_of_complete_text = copy_of_complete_text[match.end():]
     
     return the_friqin_list
-    #
-    # c = re.sub('<.*?>', '', aaa)  # has correct inditing, TODO - use it
-    # m = re.search("(?<=<TEXT>).", aaa)
-    # import pdb;pdb.set_trace()
-    # m.group(0)
-    # m.start()
-    # m.end()
-    # only_analyze = re.sub('\s*<QUOTE PREVIOUSPOST.*?>\s*', '. ', re.split("<TEXT>", aaa)[1])
-    # text1 = [re.sub('\s*<.*?>\s*', '', s) for s in re.findall("</SPEAKER>.*?</TURN>", only_analyze)]
-    # posters = [re.sub('\s*<.*?>\s*', '', s) for s in re.findall("<POSTER>.*?</POSTER>", only_analyze)]
-    # postdates = [re.sub('\s*<.*?>\s*', '', s) for s in re.findall("<POSTDATE>.*?</POSTDATE>", only_analyze)]
-    # subjects = [re.sub('\s*<.*?>\s*', '', s) for s in re.findall("<SUBJECT>.*?</SUBJECT>", only_analyze)]
-    # text2 = [re.sub('\s*<.*?>\s*', '', s) for s in re.findall("</SUBJECT>.*?</POST>", only_analyze)]
-    # text3 = []
-    # if not text2:
-    #     text3 = [re.sub('\s*<.*?>\s*', '', s) for s in re.findall("</POSTDATE>.*?</POST>", only_analyze)]
-    #
-    # for doc_portion in (posters + postdates + subjects + text1 + text2 + text3):
-    #     print_my_tree(doc_portion)
 
-import pdb;pdb.set_trace()
+
 l1 = bla("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/bc/timex2norm/CNN_CF_20030303.1900.00.sgm")
 l2 = bla("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/un/timex2norm/alt.atheism_20041104.2428.sgm")
 
