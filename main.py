@@ -207,14 +207,15 @@ def main(path, cmd_subtype=None):
         subtype = get_subtype()
     else:
         subtype = cmd_subtype if cmd_subtype != 'None' else None
-        found = False
-        for i, (cur_type, subtypes) in types.items():
-            if subtype in subtypes:
-                print_type(cur_type, subtype if subtype is not None else 'None')
-                found = True
-        if not found:
-            print_usage()
-            return
+    
+    found = False
+    for i, (cur_type, subtypes) in types.items():
+        if subtype in subtypes:
+            print_type(cur_type, subtype if subtype is not None else 'None')
+            found = True
+    if not found:
+        print_usage()
+        return
     
     sentences = {}
     extract_all(subtype, path, sentences)
