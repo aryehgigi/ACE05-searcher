@@ -1,0 +1,29 @@
+TODO: 
+1. rethink algorithm
+2. continue implementing
+
+for every doc:
+	get all entities
+	get all relations
+	for every sentence:
+		for every pair of entities in that sentence:
+			if pair is valid:
+				store pair and sentence
+				if rule applies on tree (or representation):
+					if the pair is in correct relation:
+						add 1 to counter
+					elif the pair is in other relation:
+						add 1 to counter
+					else: # not in any relation
+						add 1 to counter
+	
+for every wanted_pair:
+
+for every wanted_pair:
+    for every group (not a relation \ other relation \ correct relation):
+        for every precentage_type (verbal[either false positive or true positive] \ non-verbal[either false positive or oopse positive]):
+            print(pair[or origin-sentence-etc] + group+ precentage_type + str(precentage) + "%")
+			
+			or
+			
+			print all potential verbs (for user to decide!)

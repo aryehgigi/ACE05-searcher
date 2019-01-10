@@ -1,0 +1,18 @@
+in cmd:
+
+#python -m pip install -U virtualenv
+#virtualenv .env
+#.env\Scripts\activate
+pip install -U spacy
+python -m spacy download en
+
+in python:
+
+import spacy
+nlp = spacy.load('en_core_web_sm')
+doc = nlp(u"displaCy uses JavaScript, SVG and CSS.")
+spacy.displacy.serve(doc, style='dep')
+
+in browser:
+
+localhost:5000
