@@ -21,6 +21,7 @@ def print_my_tree(text):
     for s in d2:
         print_mod(s)
 
+
 def find_tree(text, out, g_index):
     d = nlp(text)
     

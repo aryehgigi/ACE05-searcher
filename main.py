@@ -118,7 +118,6 @@ def extract_doc(subtype, root, data_type, path, sentences):
                 print_mentions(child, entities, data_type, sentences) if search_sub_type else print_metonymy(child, entities, data_type, path)
                 
 
-
 def extract_all(subtype, path, sentences):
     for subdir, dirs, files in os.walk(path):
         if 'timex2norm' in subdir:
@@ -126,9 +125,10 @@ def extract_all(subtype, path, sentences):
                 if filename.endswith(".apf.xml"):
                     tree = ET.parse(subdir + os.sep + filename)
                     root = tree.getroot()
-                    indices = [i for i in data_types if (os.sep + i + os.sep) in subdir]
-                    assert(len(indices) == 1)
-                    extract_doc(subtype, root, indices[0], subdir + os.sep + filename, sentences)
+                    data_type = [i for i in data_types if (os.sep + i + os.sep) in subdir]
+                    assert(len(data_type) == 1)
+                    data_type = data_type[0]
+                    extract_doc(subtype, root, data_type, subdir + os.sep + filename, sentences)
 
 
 def print_type(cur_type, subtype):
