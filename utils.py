@@ -107,8 +107,30 @@ def break_sgm(path):
     return sentences
 
 
-l1 = bla("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/bc/timex2norm/CNN_CF_20030303.1900.00.sgm")
-l2 = bla("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/un/timex2norm/alt.atheism_20041104.2428.sgm")
+def check_rule(subtype, sgm_path):
+    sentences = break_sgm(sgm_path)
+    entities = get_entities() # TODO - assumes entities are mentions that has:
+                                # ID(mention), type(non-mention), start(head), end(head), extent, head and is ordered by start and then end ascendingly
+    prev_entity_index = 0
+    entity_index = 0
+    for sentence in sentences:
+        in_sentence = True
+        entity_index = prev_doc_index
+        while in_sentence:
+            if entities[entity_index]["START"] > sentence[3]:
+                in_sentence = False
+            else:
+                entity_index += 1
+        # do_something(prev_entity_index, entity_index)
+        for lhs in entities[prev_entity_index: entity_index]:
+            for rhs in entities[prev_entity_index: entity_index]:
+                if (lhs["TYPE"] + "-" + rhs["TYPE"]) in relation_options[subtype]:
+                    # TODO
+        prev_entity_index = entity_index
+
+
+l1 = algo("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/bc/timex2norm/CNN_CF_20030303.1900.00.sgm")
+l2 = algo("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/un/timex2norm/alt.atheism_20041104.2428.sgm")
 
 # TODO
 # 1. rewrite for speed up
