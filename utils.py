@@ -1,7 +1,49 @@
 import io
 import re
 import spacy
+
 nlp = spacy.load('en_core_web_sm')
+
+relation_options = {
+    'Near': ['PER-FAC', 'PER-GPE', 'PER-LOC', 'FAC-FAC', 'FAC-GPE', 'FAC-LOC', 'GPE-FAC', 'GPE-GPE', 'GPE-LOC', 'LOC-FAC', 'LOC-GPE', 'LOC-LOC'],
+    'Located': ['PER-FAC', 'PER-GPE', 'PER-LOC'],
+    'Business': ['PER-PER'],
+    'Family': ['PER-PER'],
+    'Lasting-Personal': ['PER-PER'],
+    'Geographical': ['FAC-FAC', 'FAC-GPE', 'FAC-LOC', 'GPE-FAC', 'GPE-GPE', 'GPE-LOC', 'LOC-FAC', 'LOC-GPE', 'LOC-LOC'],
+    'Subsidiary': ['ORG-ORG', 'ORG-GPE'],
+    'Artifact': ['VEH-VEH', 'WEA-WEA'],
+    'Employment': ['PER-ORG', 'PER-GPE'],
+    'Ownership': ['PER-ORG'],
+    'Founder': ['PER-ORG', 'PER-GPE', 'ORG-ORG', 'ORG-GPE'],
+    'Student-Alum': ['PER-ORG'],
+    'Sports-Affiliation': ['PER-ORG'],
+    'Investor-Shareholder': ['PER-ORG', 'PER-GPE', 'ORG-ORG', 'ORG-GPE', 'GPE-ORG', 'GPE-GPE'],
+    'Membership': ['PER-ORG', 'ORG-ORG', 'GPE-ORG'],
+    'User-Owner-Inventor-Manufacturer': ['PER-WEA', 'PER-VEH', 'PER-FAC', 'ORG-WEA', 'ORG-VEH', 'ORG-FAC', 'GPE-WEA', 'GPE-VEH', 'GPE-FAC'],
+    'Citizen-Resident-Religion-Ethnicity': ['PER-PER', 'PER-LOC', 'PER-GPE', 'PER-ORG'],
+    'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']}
+
+# relation_options = {
+# "Near": (["PER", "FAC", "GPE", "LOC"], ["FAC", "GPE", "LOC"]),
+# "Located": (["PER"], ["FAC", "GPE", "LOC"]),
+# "Business": (["PER"], ["PER"]),
+# "Family": (["PER"], ["PER"]),
+# "Lasting-Personal": (["PER"], ["PER"]),
+# "Geographical": (["FAC", "GPE", "LOC"], ["FAC", "GPE", "LOC"]),
+# "Subsidiary": (["ORG"], ["ORG", "GPE"]),
+# "Artifact_a": (["VEH"], ["VEH"]),
+# "Artifact_b": (["WEA"], ["WEA"]),
+# "Employment": (["PER"], ["ORG", "GPE"]),
+# "Ownership": (["PER"], ["ORG"]),
+# "Founder": (["PER", "ORG"], ["ORG", "GPE"]),
+# "Student-Alum": (["PER"], ["ORG"]),
+# "Sports-Affiliation": (["PER"], ["ORG"]),
+# "Investor-Shareholder": (["PER", "ORG", "GPE"], ["ORG", "GPE"]),
+# "Membership": (["PER", "ORG", "GPE"], ["ORG"]),
+# "User-Owner-Inventor-Manufacturer": (["PER", "ORG", "GPE"], ["WEA", "VEH", "FAC"]),
+# "Citizen-Resident-Religion-Ethnicity": (["PER"], ["PER", "LOC", "GPE", "ORG"]),
+# "Org-Location-Origin": (["ORG"], ["LOC", "GPE"])}
 
 
 def print_mod(cur, count=0):
@@ -28,7 +70,7 @@ def find_tree(text, out, g_index):
     for s2 in d.sents:
         out.append((s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
         # TODO - for debuging: print_mod(nlp(s2).print_tree())
-    
+
 
 # TODO - nlp line spliting might not be best for our text!
 def bla(path):
@@ -50,7 +92,8 @@ def bla(path):
             text_to_tree = text_to_tree.lstrip()
             spaces_len = text_with_trail_spaces_len - len(text_to_tree)
             if found == "</POSTER>" or found == "</SPEAKER>":
-                the_friqin_list.append((text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
+                the_friqin_list.append(
+                    (text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
             elif len(text_to_tree) > 0:
                 find_tree(text_to_tree, the_friqin_list, ace_indices + spaces_len)
         
