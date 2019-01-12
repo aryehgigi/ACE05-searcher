@@ -69,16 +69,16 @@ def find_tree(text, out, g_index):
     
     for s2 in d.sents:
         out.append((s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
-        # TODO - for debuging: print_mod(nlp(s2).print_tree())
+        # TODO - for debugging: print_mod(nlp(s2).print_tree())
 
 
-# TODO - nlp line spliting might not be best for our text!
-def bla(path):
+# TODO - nlp line splitting might not be best for our text!
+def break_sgm(path):
     f = io.open(path, "r", encoding="utf-8").read()
     complete_text = f.strip().replace("\n", " ")
     pointer = 0
     ace_indices = 0
-    the_friqin_list = []
+    sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
     start_collecting = False
     copy_of_complete_text = complete_text
     while pointer != len(complete_text):
@@ -92,10 +92,10 @@ def bla(path):
             text_to_tree = text_to_tree.lstrip()
             spaces_len = text_with_trail_spaces_len - len(text_to_tree)
             if found == "</POSTER>" or found == "</SPEAKER>":
-                the_friqin_list.append(
+                sentences.append(
                     (text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
             elif len(text_to_tree) > 0:
-                find_tree(text_to_tree, the_friqin_list, ace_indices + spaces_len)
+                find_tree(text_to_tree, sentences, ace_indices + spaces_len)
         
         if found == "<TEXT>":
             start_collecting = True
@@ -104,7 +104,7 @@ def bla(path):
         pointer += match.end()
         copy_of_complete_text = copy_of_complete_text[match.end():]
     
-    return the_friqin_list
+    return sentences
 
 
 l1 = bla("C:/Users/inbaryeh/PycharmProjects/ace05_parser/data/bc/timex2norm/CNN_CF_20030303.1900.00.sgm")
