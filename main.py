@@ -185,15 +185,12 @@ def main_rule(subtype, sgm_path, entities, relations, counters):
     for sentence in sentences:
         in_sentence = True
         
-        while in_sentence:
-            try:
-                if entities[entity_index].start > sentence.end:
-                    in_sentence = False
-                else:
-                    assert(entities[entity_index].end <= sentence.end)
-                    entity_index += 1
-            except:
-                import pdb;pdb.set_trace()
+        while in_sentence and entity_index < len(entities):
+            if entities[entity_index].start > sentence.end:
+                in_sentence = False
+            else:
+                assert(entities[entity_index].end <= sentence.end)
+                entity_index += 1
         
         for lhs in entities[prev_entity_index: entity_index]:
             for rhs in entities[prev_entity_index: entity_index]:
@@ -329,7 +326,7 @@ def extract_doc(root, data_type, path):
                         entity_mention.attrib['ID'], child.attrib['TYPE'], head_start, head_end, head, extent))
     
     # order the entities_by_idx by start and then by end
-    sorted(entities_by_idx, key=operator.attrgetter('start', 'end'))
+    entities_by_idx = sorted(entities_by_idx, key=operator.attrgetter('start', 'end'))
     
     # extract relations
     for child in root[0]:
