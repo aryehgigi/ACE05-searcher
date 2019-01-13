@@ -10,6 +10,7 @@ import os
 import sys
 import io
 import re
+import operator
 from enum import Enum
 from collections import namedtuple
 from pathlib import Path
@@ -17,10 +18,9 @@ import multiprocessing
 import xml.etree.ElementTree as ET
 
 port_inc = 5000
-output_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
-Relation = namedtuple("Entity", "rel_type data_type orig colored_text")
+Relation = namedtuple("Relation", "rel_type data_type orig colored_text")
 Sentence = namedtuple("Sentence", "text tree start end")
 relation_types = {0: ('ART', ['User-Owner-Inventor-Manufacturer']),
          1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
@@ -79,7 +79,7 @@ def dep_view(relations):
     nlp = spacy.load('en_core_web_sm')
     docs = []
     for line in lines:
-        docs.append(nlp(relations[line][Relation.orig]))
+        docs.append(nlp(relations[line - 1].orig))
     
     p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc])
     p.start()
@@ -99,7 +99,7 @@ def dep_views(relations):
 
 def print_relations(relations):
     for i, relation in enumerate(relations):
-        print(str(i) + '(' + relation[Relation.data_type] + '). ' + relation[Relation.colored_text])
+        print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
 
 
 def print_statistics(counters):
@@ -127,7 +127,7 @@ def print_my_tree(unicode_text):
         print_mod(s)
 
 
-def find_tree(text, out, g_index):
+def find_tree(text, out, g_index, nlp):
     d = nlp(text)
     
     for s2 in d.sents:
@@ -160,7 +160,7 @@ def break_sgm(path):
                 sentences.append(
                     Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
             elif len(text_to_tree) > 0:
-                find_tree(text_to_tree, sentences, ace_indices + spaces_len)
+                find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
         
         if found == "<TEXT>":
             start_collecting = True
@@ -186,11 +186,14 @@ def main_rule(subtype, sgm_path, entities, relations, counters):
         in_sentence = True
         
         while in_sentence:
-            if entities[entity_index].start > sentence.end:
-                in_sentence = False
-            else:
-                assert(entities[entity_index].end <= sentence.end)
-                entity_index += 1
+            try:
+                if entities[entity_index].start > sentence.end:
+                    in_sentence = False
+                else:
+                    assert(entities[entity_index].end <= sentence.end)
+                    entity_index += 1
+            except:
+                import pdb;pdb.set_trace()
         
         for lhs in entities[prev_entity_index: entity_index]:
             for rhs in entities[prev_entity_index: entity_index]:
@@ -202,14 +205,14 @@ def main_rule(subtype, sgm_path, entities, relations, counters):
                     if did_match:
                         if pair not in relations:
                             counters[Counters.FPN] += 1
-                        elif relations[pair].type == subtype:
+                        elif relations[pair].rel_type == subtype:
                             counters[Counters.TP] += 1
                         else:
                             counters[Counters.FPO] += 1
                     else:  # did not match
                         if pair not in relations:
                             counters[Counters.TNN] += 1
-                        elif relations[pair].type == subtype:
+                        elif relations[pair].rel_type == subtype:
                             counters[Counters.FN] += 1
                         else:
                             counters[Counters.TNO] += 1
@@ -218,36 +221,35 @@ def main_rule(subtype, sgm_path, entities, relations, counters):
 
 
 # TODO - fix
-def extract_metonymy(relation, entities, data_type, path):
-    global output_counter
-    head_start = 0
-    head_start2 = 0
-    head_end = 0
-    head_end2 = 0
-
-    output_counter += 1
-    
-    for cur_child in relation:
-        if cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-1':
-            head_start, head_end = entities[cur_child.attrib['REFID']]
-        elif cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-2':
-            head_start2, head_end2 = entities[cur_child.attrib['REFID']]
-    
-    sgm = open(path.replace('apf.xml', 'sgm')).read()
-    sgm = re.sub('<.*?>', '', sgm)
-    first = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start): head_start],
-                                                      sgm[head_start: head_end + 1],
-                                                      sgm[head_end + 1: sgm.find('\n', head_end, len(sgm))])
-    second = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start2): head_start2],
-                                                       sgm[head_start2: head_end2 + 1],
-                                                       sgm[head_end2 + 1: sgm.find('\n', head_end2, len(sgm))])
-    
-    print(str(output_counter) + '(' + data_type + '). ' + "..." + first.replace('\n', '') + "..." + " <--> " + "..." + second.replace('\n', '') + "...")
-    return
+# def extract_metonymy(relation, entities, data_type, path):
+#     global output_counter
+#     head_start = 0
+#     head_start2 = 0
+#     head_end = 0
+#     head_end2 = 0
+#
+#     output_counter += 1
+#
+#     for cur_child in relation:
+#         if cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-1':
+#             head_start, head_end = entities[cur_child.attrib['REFID']]
+#         elif cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-2':
+#             head_start2, head_end2 = entities[cur_child.attrib['REFID']]
+#
+#     sgm = open(path.replace('apf.xml', 'sgm')).read()
+#     sgm = re.sub('<.*?>', '', sgm)
+#     first = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start): head_start],
+#                                                       sgm[head_start: head_end + 1],
+#                                                       sgm[head_end + 1: sgm.find('\n', head_end, len(sgm))])
+#     second = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start2): head_start2],
+#                                                        sgm[head_start2: head_end2 + 1],
+#                                                        sgm[head_end2 + 1: sgm.find('\n', head_end2, len(sgm))])
+#
+#     print(str(output_counter) + '(' + data_type + '). ' + "..." + first.replace('\n', '') + "..." + " <--> " + "..." + second.replace('\n', '') + "...")
+#     return
 
 
 def extract_relations(xml_relation, entities, rel_type, data_type, relations):
-    global output_counter
     start = 0
     head_start = 0
     head_start2 = 0
@@ -258,7 +260,6 @@ def extract_relations(xml_relation, entities, rel_type, data_type, relations):
     
     for cur_child in xml_relation:
         if cur_child.tag == 'relation_mention':
-            output_counter += 1
             arg1_id = -1
             arg2_id = -1
             for sub_rel_mention in cur_child:
@@ -288,7 +289,15 @@ def extract_relations(xml_relation, entities, rel_type, data_type, relations):
                 original_sentence[last_head_start - start: last_head_end - start + 1] +   \
                 "\033[0m" +                                                               \
                 original_sentence[last_head_end - start + 1:]
-            relations[(arg1_id, arg2_id)] = rel_type, data_type, original_sentence, colored_text.replace('\n', ' ')
+            if (arg1_id, arg2_id) in relations:
+                if relations[(arg1_id, arg2_id)].rel_type == "Membership" and rel_type == "Employment":
+                    continue
+                elif relations[(arg1_id, arg2_id)].rel_type == "Employment" and rel_type == "Membership":
+                    print("Notification: relation Employment was overridden by Membership of ID: %s" % cur_child.attrib["ID"])
+                else:
+                    print("Notification: bad duplicate found, ID: %s, Type: %s" % (cur_child.attrib["ID"], rel_type))
+                    #import pdb;pdb.set_trace()  # TODO - remove this in the future
+            relations[(arg1_id, arg2_id)] = Relation(rel_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
 
 
 def extract_doc(root, data_type, path):
@@ -299,28 +308,34 @@ def extract_doc(root, data_type, path):
     # store all entity mentions in a {ID:(start,end)} dict, and Entity ordered list
     for child in root[0]:
         if child.tag == 'entity':
-            for entity_mentions in child:
-                for entity_mention in entity_mentions:
-                    if entity_mention.tag == 'head':
-                        assert(entity_mention[0].tag == 'charseq')
-                        entities_by_id[entity_mentions.attrib['ID']] =\
-                            int(entity_mention[0].attrib['START']), int(entity_mention[0].attrib['END'])
-                        # for metonymy
-                        entities_by_id[child.attrib['ID']] =\
-                            int(entity_mention[0].attrib['START']), int(entity_mention[0].attrib['END'])
-                        entities_by_idx.append(Entity(
-                            entity_mention.attrib['ID'],
-                            child.attrib['TYPE'],
-                            entity_mention[1].attrib['START'],
-                            entity_mention[1].attrib['END'],
-                            entity_mention[1][0].text,
-                            entity_mention[0][0].text
-                        ))
+            for grandchild in child:
+                if grandchild.tag == 'entity_mention':
+                    entity_mention = grandchild
+                    assert(
+                        (entity_mention[0].tag == 'extent') and
+                        (entity_mention[0][0].tag == 'charseq') and
+                        (entity_mention[1].tag == 'head') and
+                        (entity_mention[1][0].tag == 'charseq'))
+                    extent = entity_mention[0][0].text
+                    head = entity_mention[1][0].text
+                    head_start = int(entity_mention[1][0].attrib['START'])
+                    head_end = int(entity_mention[1][0].attrib['END'])
+                    
+                    entities_by_id[entity_mention.attrib['ID']] =\
+                        int(head_start), int(head_end)
+                    entities_by_id[child.attrib['ID']] =\
+                        int(head_start), int(head_end)
+                    entities_by_idx.append(Entity(
+                        entity_mention.attrib['ID'], child.attrib['TYPE'], head_start, head_end, head, extent))
     
+    # order the entities_by_idx by start and then by end
+    sorted(entities_by_idx, key=operator.attrgetter('start', 'end'))
+    
+    # extract relations
     for child in root[0]:
         if child.tag == 'relation':
             extract_relations(
-                child, entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations)
+                child, entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
     
     return entities_by_idx, relations_by_pair
 
@@ -335,11 +350,11 @@ def walk_all(subtype, path, wanted_relation_list, counters):
                     data_type = [i for i in data_types if (os.sep + i + os.sep) in subdir]
                     assert(len(data_type) == 1)
                     data_type = data_type[0]
-                    entities, relations_by_pair = extract_doc(root, data_type, subdir + os.sep + filename)
-                    for relation in relations_by_pair.values():
-                        if relation[Relation.type] == subtype:
+                    entities_by_idx, relations_by_pair = extract_doc(root, data_type, subdir + os.sep + filename)
+                    for k, relation in relations_by_pair.items():
+                        if relation.rel_type == subtype:
                             wanted_relation_list.append(relation)
-                    main_rule(subtype, (subdir + os.sep + filename).replace('apf.xml', 'sgm'), entities, relations_by_pair, counters)
+                    main_rule(subtype, (subdir + os.sep + filename).replace('apf.xml', 'sgm'), entities_by_idx, relations_by_pair, counters)
 
 
 def print_type(cur_type, subtype):
@@ -396,8 +411,8 @@ def main(path, cmd_subtype=None):
         print_usage()
         return
     
-    relations = {}
-    counters = [0] * 6
+    relations = []
+    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
     walk_all(subtype, path, relations, counters)
     print_statistics(counters)
     print_relations(relations)
