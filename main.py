@@ -189,7 +189,11 @@ def main_rule(subtype, sgm_path, entities, relations, counters):
             if entities[entity_index].start > sentence.end:
                 in_sentence = False
             else:
-                assert(entities[entity_index].end <= sentence.end)
+                if entities[entity_index].end > sentence.end:
+                    print("Entity was broken by wrong sentence splitting:"
+                          "\n\tFilePath=%s,\n\tEntityID=%s,\n\tSplitedSentence=%s" % (sgm_path, entities[entity_index].id, sentence.text))
+                    del entities[entity_index]
+                    continue
                 entity_index += 1
         
         for lhs in entities[prev_entity_index: entity_index]:
