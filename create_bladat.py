@@ -1,4 +1,45 @@
 entity_types = ["FAC", "GPE", "LOC", "ORG", "PER", "VEH", "WEA"]
+relation_arg_combination = {
+    'Near': ['PER-FAC', 'PER-GPE', 'PER-LOC', 'FAC-FAC', 'FAC-GPE', 'FAC-LOC', 'GPE-FAC', 'GPE-GPE', 'GPE-LOC', 'LOC-FAC', 'LOC-GPE', 'LOC-LOC'],
+    'Located': ['PER-FAC', 'PER-GPE', 'PER-LOC'],
+    'Business': ['PER-PER'],
+    'Family': ['PER-PER'],
+    'Lasting-Personal': ['PER-PER'],
+    'Geographical': ['FAC-FAC', 'FAC-GPE', 'FAC-LOC', 'GPE-FAC', 'GPE-GPE', 'GPE-LOC', 'LOC-FAC', 'LOC-GPE', 'LOC-LOC'],
+    'Subsidiary': ['ORG-ORG', 'ORG-GPE'],
+    'Artifact': ['VEH-VEH', 'WEA-WEA'],
+    'Employment': ['PER-ORG', 'PER-GPE'],
+    'Ownership': ['PER-ORG'],
+    'Founder': ['PER-ORG', 'PER-GPE', 'ORG-ORG', 'ORG-GPE'],
+    'Student-Alum': ['PER-ORG'],
+    'Sports-Affiliation': ['PER-ORG'],
+    'Investor-Shareholder': ['PER-ORG', 'PER-GPE', 'ORG-ORG', 'ORG-GPE', 'GPE-ORG', 'GPE-GPE'],
+    'Membership': ['PER-ORG', 'ORG-ORG', 'GPE-ORG'],
+    'User-Owner-Inventor-Manufacturer': ['PER-WEA', 'PER-VEH', 'PER-FAC', 'ORG-WEA', 'ORG-VEH', 'ORG-FAC', 'GPE-WEA', 'GPE-VEH', 'GPE-FAC'],
+    'Citizen-Resident-Religion-Ethnicity': ['PER-PER', 'PER-LOC', 'PER-GPE', 'PER-ORG'],
+    'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']}
+relation_args = {
+    "Near": (["PER", "FAC", "GPE", "LOC"], ["FAC", "GPE", "LOC"]),
+    "Located": (["PER"], ["FAC", "GPE", "LOC"]),
+    "Business": (["PER"], ["PER"]),
+    "Family": (["PER"], ["PER"]),
+    "Lasting-Personal": (["PER"], ["PER"]),
+    "Geographical": (["FAC", "GPE", "LOC"], ["FAC", "GPE", "LOC"]),
+    "Subsidiary": (["ORG"], ["ORG", "GPE"]),
+    "Artifact_a": (["VEH"], ["VEH"]),
+    "Artifact_b": (["WEA"], ["WEA"]),
+    "Employment": (["PER"], ["ORG", "GPE"]),
+    "Ownership": (["PER"], ["ORG"]),
+    "Founder": (["PER", "ORG"], ["ORG", "GPE"]),
+    "Student-Alum": (["PER"], ["ORG"]),
+    "Sports-Affiliation": (["PER"], ["ORG"]),
+    "Investor-Shareholder": (["PER", "ORG", "GPE"], ["ORG", "GPE"]),
+    "Membership": (["PER", "ORG", "GPE"], ["ORG"]),
+    "User-Owner-Inventor-Manufacturer": (["PER", "ORG", "GPE"], ["WEA", "VEH", "FAC"]),
+    "Citizen-Resident-Religion-Ethnicity": (["PER"], ["PER", "LOC", "GPE", "ORG"]),
+    "Org-Location-Origin": (["ORG"], ["LOC", "GPE"])}
+
+
 d = {}
 for entity_type_lhs in entity_types:
     for entity_type_rhs in entity_types:
