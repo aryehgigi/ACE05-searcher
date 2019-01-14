@@ -127,18 +127,14 @@ def print_my_tree(unicode_text):
         print_mod(s)
 
 
-def find_tree(text, out, g_index, nlp):
-    d = nlp(text)
-    
-    for s2 in d.sents:
-        out.append(Sentence(s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
-        # TODO - for debugging: print_mod(nlp(s2).print_tree())
+# def find_tree(text, out, g_index, nlp):
+#     d = nlp(text)
+#
+#     for s2 in d.sents:
+#         out.append(Sentence(s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
 
 
-def break_sgm(path):
-    import spacy
-    nlp = spacy.load('en_core_web_sm')
-    
+def break_sgm(path, nlp):
     f = io.open(path, "r", encoding="utf-8").read()
     complete_text = f.strip().replace("\n", " ")
     pointer = 0
@@ -146,6 +142,7 @@ def break_sgm(path):
     sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
     start_collecting = False
     copy_of_complete_text = complete_text
+    relevant_text = []
     while pointer != len(complete_text):
         match = re.search("<.*?>", copy_of_complete_text)
         found = copy_of_complete_text[match.start(): match.end()]
@@ -156,11 +153,13 @@ def break_sgm(path):
             text_with_trail_spaces_len = len(text_to_tree)
             text_to_tree = text_to_tree.lstrip()
             spaces_len = text_with_trail_spaces_len - len(text_to_tree)
-            if found == "</POSTER>" or found == "</SPEAKER>":
-                sentences.append(
-                    Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
-            elif len(text_to_tree) > 0:
-                find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
+            if len(text_to_tree) != 0:
+                relevant_text.append((text_to_tree, ace_indices + spaces_len))
+            # if found == "</POSTER>" or found == "</SPEAKER>":
+            #     sentences.append(
+            #         Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
+            # elif len(text_to_tree) > 0:
+            #     find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
         
         if found == "<TEXT>":
             start_collecting = True
@@ -169,6 +168,22 @@ def break_sgm(path):
         pointer += match.end()
         copy_of_complete_text = copy_of_complete_text[match.end():]
     
+    i = 0
+    pointer = 0
+    broken_sentences = nlp(u"\n. ".join([text for (text, start) in relevant_text]))
+    for broken_sentence in broken_sentences.sents:
+        # if broken_sentence.text.startswith("That's a fraction of physician income"):
+        #     import pdb;pdb.set_trace()
+        if len(broken_sentence.text) > 1 and broken_sentence.text[-2] == '\n':
+            text_to_copy = broken_sentence.text[:-2]
+            paragraph_start = relevant_text[i][1] + pointer + relevant_text[i][0][pointer:].find(text_to_copy)
+            pointer = 0
+            i += 1
+        else:
+            text_to_copy = broken_sentence.text
+            paragraph_start = relevant_text[i][1] + pointer + relevant_text[i][0][pointer:].find(text_to_copy)
+            pointer += len(text_to_copy)
+        sentences.append(Sentence(text_to_copy, [], paragraph_start, paragraph_start + len(text_to_copy) - 1))
     return sentences
 
 
@@ -177,8 +192,8 @@ def check_rule(tree, lhs, rhs):
     return True
 
 
-def main_rule(subtype, sgm_path, entities, relations, counters):
-    sentences = break_sgm(sgm_path)
+def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
+    sentences = break_sgm(sgm_path, nlp)
     prev_entity_index = 0
     entity_index = 0
 
@@ -342,6 +357,8 @@ def extract_doc(root, data_type, path):
 
 
 def walk_all(subtype, path, wanted_relation_list, counters):
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
     for subdir, dirs, files in os.walk(path):
         if 'timex2norm' in subdir:
             for filename in files:
@@ -355,7 +372,7 @@ def walk_all(subtype, path, wanted_relation_list, counters):
                     for k, relation in relations_by_pair.items():
                         if relation.rel_type == subtype:
                             wanted_relation_list.append(relation)
-                    main_rule(subtype, (subdir + os.sep + filename).replace('apf.xml', 'sgm'), entities_by_idx, relations_by_pair, counters)
+                    main_rule(subtype, (subdir + os.sep + filename).replace('apf.xml', 'sgm'), nlp, entities_by_idx, relations_by_pair, counters)
 
 
 def print_type(cur_type, subtype):
@@ -403,10 +420,11 @@ def main(path, cmd_subtype=None):
     else:
         subtype = cmd_subtype if cmd_subtype != 'None' else None
     
+    meta_type = ""
     found = False
     for i, (cur_type, subtypes) in relation_types.items():
         if subtype in subtypes:
-            print_type(cur_type, subtype if subtype is not None else 'None')
+            meta_type = cur_type
             found = True
     if not found:
         print_usage()
@@ -416,6 +434,7 @@ def main(path, cmd_subtype=None):
     counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
     walk_all(subtype, path, relations, counters)
     print_statistics(counters)
+    print_type(meta_type, str(subtype))
     print_relations(relations)
     dep_views(relations)
 
