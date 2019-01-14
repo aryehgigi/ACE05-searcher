@@ -127,11 +127,11 @@ def print_my_tree(unicode_text):
         print_mod(s)
 
 
-# def find_tree(text, out, g_index, nlp):
-#     d = nlp(text)
-#
-#     for s2 in d.sents:
-#         out.append(Sentence(s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
+def find_tree(text, out, g_index, nlp):
+    d = nlp(text)
+
+    for s2 in d.sents:
+        out.append(Sentence(s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
 
 
 def break_sgm(path, nlp):
@@ -153,13 +153,12 @@ def break_sgm(path, nlp):
             text_with_trail_spaces_len = len(text_to_tree)
             text_to_tree = text_to_tree.lstrip()
             spaces_len = text_with_trail_spaces_len - len(text_to_tree)
-            if len(text_to_tree) != 0:
-                relevant_text.append((text_to_tree, ace_indices + spaces_len))
-            # if found == "</POSTER>" or found == "</SPEAKER>":
-            #     sentences.append(
-            #         Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
+            if len(text_to_tree) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>"]:
+                find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
+                # relevant_text.append((text_to_tree, ace_indices + spaces_len))
+                # sentences.append(
+                #     Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
             # elif len(text_to_tree) > 0:
-            #     find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
         
         if found == "<TEXT>":
             start_collecting = True
@@ -168,22 +167,20 @@ def break_sgm(path, nlp):
         pointer += match.end()
         copy_of_complete_text = copy_of_complete_text[match.end():]
     
-    i = 0
-    pointer = 0
-    broken_sentences = nlp(u"\n. ".join([text for (text, start) in relevant_text]))
-    for broken_sentence in broken_sentences.sents:
-        # if broken_sentence.text.startswith("That's a fraction of physician income"):
-        #     import pdb;pdb.set_trace()
-        if len(broken_sentence.text) > 1 and broken_sentence.text[-2] == '\n':
-            text_to_copy = broken_sentence.text[:-2]
-            paragraph_start = relevant_text[i][1] + pointer + relevant_text[i][0][pointer:].find(text_to_copy)
-            pointer = 0
-            i += 1
-        else:
-            text_to_copy = broken_sentence.text
-            paragraph_start = relevant_text[i][1] + pointer + relevant_text[i][0][pointer:].find(text_to_copy)
-            pointer += len(text_to_copy)
-        sentences.append(Sentence(text_to_copy, [], paragraph_start, paragraph_start + len(text_to_copy) - 1))
+    # i = 0
+    # pointer = 0
+    # broken_sentences = nlp(u" ".join([text for (text, start) in relevant_text]).replace(" \"", " {").replace("\" ", "} ").replace(" ... ", " ~#*"))
+    # for broken_sentence in broken_sentences.sents:
+    #     text_to_copy = broken_sentence.text.replace(" {", " \"").replace("} ", "\" ").replace("}", "\"").replace("{", "\"").replace("~#*", "... ")
+    #     find_pos = relevant_text[i][0][pointer:].find(text_to_copy)
+    #     if find_pos == -1:
+    #         i += 1
+    #         pointer = 0
+    #         sentence_start = relevant_text[i][1]
+    #     else:
+    #         sentence_start = relevant_text[i][1] + pointer + find_pos
+    #     sentences.append(Sentence(text_to_copy, [], sentence_start, sentence_start + len(text_to_copy) - 1))
+    #     pointer += len(text_to_copy)
     return sentences
 
 
@@ -415,6 +412,8 @@ def print_usage():
 
 
 def main(path, cmd_subtype=None):
+    import time
+    start = time.time()
     if not cmd_subtype:
         subtype = get_subtype()
     else:
@@ -437,6 +436,7 @@ def main(path, cmd_subtype=None):
     print_type(meta_type, str(subtype))
     print_relations(relations)
     dep_views(relations)
+    print("Run time: %.2f" % (time.time() - start))
 
 
 if __name__ == "__main__":
