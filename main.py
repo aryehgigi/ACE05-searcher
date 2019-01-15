@@ -21,7 +21,7 @@ port_inc = 5000
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
 Relation = namedtuple("Relation", "rel_type data_type orig colored_text")
-Sentence = namedtuple("Sentence", "text tree start end")
+Sentence = namedtuple("Sentence", "span start end")
 relation_types = {0: ('ART', ['User-Owner-Inventor-Manufacturer']),
          1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
          2: ('METONYMY', [None]),
@@ -48,7 +48,19 @@ relation_arg_combos = {
     'User-Owner-Inventor-Manufacturer': ['PER-WEA', 'PER-VEH', 'PER-FAC', 'ORG-WEA', 'ORG-VEH', 'ORG-FAC', 'GPE-WEA', 'GPE-VEH', 'GPE-FAC'],
     'Citizen-Resident-Religion-Ethnicity': ['PER-PER', 'PER-LOC', 'PER-GPE', 'PER-ORG'],
     'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']}
-
+# (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
+rule_paths = {
+    (["nsubj"], ["prep", "pobj"]): (False, True, True, True),
+    (["nsubjpass"], ["prep", "pobj"]) : (False, True, True, True),
+    (["nsubj"], ["dobj"]) : (False, True, True, True),
+    (["nsubj"], ["advmod"]) : (True, True, True, True),
+    (["dobj"], ["dobj"]) : (False, False, False, False),
+    (["poss", "attr"], ["prep", "pobj"]) : (False, True, True, True),
+    (["pobj"], ["nsubj"]) : (True, False, False, False),
+    (["nsubj"], ["nsubj"]) : (False, False, False, False),
+    (["nsubj"], ["poss", "prep", "nsubj"]) : (False, False, False, False),
+    (["dobj"], ["nsubjpass"]) : (False, True, False, False)
+}
 
 class Counters(Enum):
     TP = 0,
@@ -130,8 +142,8 @@ def print_my_tree(unicode_text):
 def find_tree(text, out, g_index, nlp):
     d = nlp(text)
 
-    for s2 in d.sents:
-        out.append(Sentence(s2.text, nlp(s2.text).print_tree(), g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
+    for span in d.sents:
+        out.append(Sentence(span, g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
 
 
 def break_sgm(path, nlp):
@@ -184,9 +196,83 @@ def break_sgm(path, nlp):
     return sentences
 
 
-def check_rule(tree, lhs, rhs):
-    # TODO
+def check_rule(sentence, arg1, arg2):
+    arg1_word = None
+    arg2_word = None
+    for word in sentence.span:
+        if arg1.start == word.idx + sentence.start:
+            arg1_word = word
+        if arg2.start == word.idx + sentence.start:
+            arg2_word = word
+    
+    # find arg1 first verb
+    list_of_arg1_arcs = []
+    w = arg1_word
+    while w.pos != "VERB":
+        list_of_arg1_arcs.append(w.dep_)
+        w = w.head
+    # find arg2 first verb
+    list_of_arg2_arcs = []
+    w = arg2_word
+    while w.pos != "VERB":
+        list_of_arg2_arcs.append(w.dep_)
+        w = w.head
+    # check if valid paths to verbs by rule table
+    if (list_of_arg1_arcs, list_of_arg2_arcs) in rule_paths:
+        # get the value of that dict which is the indicator for same verb
+        should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 =\
+            rule_paths[(list_of_arg1_arcs, list_of_arg2_arcs)]
+        if should_be_same_verb:
+            # validate its the same verb
+            if list_of_arg1_arcs[-1] != list_of_arg2_arcs[-1]:
+                return False
+        else:
+            # check if there path is valid
+            # TODO
+            pass
+        if should_arg1_from_left and (list_of_arg1_arcs[-1].idx < arg1_word.idx):
+            return False
+        
+        if should_arg2_from_left and (list_of_arg2_arcs[-1].idx < arg2_word.idx):
+            return False
+        
+        if should_arg1_before_arg2 and (arg1_word.idx > arg2_word.idx):
+            return False
+    
     return True
+    # verbal = []
+    # level = 0
+    # # TODO build verbal using BFS
+    # bfs()
+    #
+    # # assume we get a head list from one to the other, or from both to common ancestor
+    # if arg1_word.is_ancestor(arg2_word):
+    #
+    # elif arg2_word.is_ancestor(arg1_word):
+    #
+    # else:
+    #     lca = list(set(arg1_word.ancestors) & set(arg1_word.ancestors))[0]
+    #
+    #     children
+    #     head
+    #     left_edge
+    #     lefts
+    #     right_edge
+    #     rights
+    #     n_lefts
+    #     n_rights
+    #     subtree
+    #     dep_
+    #
+    # # test the rule
+    # is_arg1_left = arg1.start > arg2.start
+    # # if (((arg1_word.dep_ in ["nsubj", "nsubjpass", "poss"] and is_arg1_left) or (arg1_word.dep_ in ["nsubj", "dobj", "pobj"] and not is_arg1_left)) and
+    # #     ((arg2_word.dep_ in ["nsubj", "nsubjpass", "poss", "advmod", "dobj"] and not is_arg1_left) or (arg2_word.dep_ in ["nsubj", "dobj", "pobj", "advmod"] and is_arg1_left)) and
+    # #     )
+    # if
+    #     return True
+    # else:
+    #     return False
 
 
 def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
@@ -208,13 +294,13 @@ def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
                     continue
                 entity_index += 1
         
-        for lhs in entities[prev_entity_index: entity_index]:
-            for rhs in entities[prev_entity_index: entity_index]:
-                if lhs.id == rhs.id:
+        for arg1 in entities[prev_entity_index: entity_index]:
+            for arg2 in entities[prev_entity_index: entity_index]:
+                if arg1.id == arg2.id:
                     continue
-                if (lhs.type + "-" + rhs.type) in relation_arg_combos[subtype]:
-                    pair = (lhs.id, rhs.id)
-                    did_match = check_rule(sentence.tree, lhs, rhs)
+                if (arg1.type + "-" + arg2.type) in relation_arg_combos[subtype]:
+                    pair = (arg1.id, arg2.id)
+                    did_match = check_rule(sentence, arg1, arg2)
                     if did_match:
                         if pair not in relations:
                             counters[Counters.FPN] += 1
