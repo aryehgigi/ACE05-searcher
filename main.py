@@ -50,16 +50,16 @@ relation_arg_combos = {
     'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']}
 # (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
 rule_paths = {
-    (["nsubj"], ["prep", "pobj"]): (False, True, True, True),
-    (["nsubjpass"], ["prep", "pobj"]) : (False, True, True, True),
-    (["nsubj"], ["dobj"]) : (False, True, True, True),
-    (["nsubj"], ["advmod"]) : (True, True, True, True),
-    (["dobj"], ["dobj"]) : (False, False, False, False),
-    (["poss", "attr"], ["prep", "pobj"]) : (False, True, True, True),
-    (["pobj"], ["nsubj"]) : (True, False, False, False),
-    (["nsubj"], ["nsubj"]) : (False, False, False, False),
-    (["nsubj"], ["poss", "prep", "nsubj"]) : (False, False, False, False),
-    (["dobj"], ["nsubjpass"]) : (False, True, False, False)
+    ("nsubj", "prep-pobj"): (False, True, True, True),
+    ("nsubjpass", "prep-pobj") : (False, True, True, True),
+    ("nsubj", "dobj") : (False, True, True, True),
+    ("nsubj", "advmod") : (True, True, True, True),
+    ("dobj", "dobj") : (False, False, False, False),
+    ("poss-attr", "prep-pobj") : (False, True, True, True),
+    ("pobj", "nsubj") : (True, False, False, False),
+    ("nsubj", "nsubj") : (False, False, False, False),
+    ("nsubj", "poss-prep-nsubj") : (False, False, False, False),
+    ("dobj", "nsubjpass") : (False, True, False, False)
 }
 
 class Counters(Enum):
@@ -143,7 +143,7 @@ def find_tree(text, out, g_index, nlp):
     d = nlp(text)
 
     for span in d.sents:
-        out.append(Sentence(span, g_index + text.find(s2.text), g_index + text.find(s2.text) + len(s2.text) - 1))
+        out.append(Sentence(span, g_index + text.find(span.text), g_index + text.find(span.text) + len(span.text) - 1))
 
 
 def break_sgm(path, nlp):
@@ -218,7 +218,7 @@ def check_rule(sentence, arg1, arg2):
         list_of_arg2_arcs.append(w.dep_)
         w = w.head
     # check if valid paths to verbs by rule table
-    if (list_of_arg1_arcs, list_of_arg2_arcs) in rule_paths:
+    if ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs)) in rule_paths:
         verb1 = list_of_arg1_arcs[-1]
         verb2 = list_of_arg2_arcs[-1]
         
