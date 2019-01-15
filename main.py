@@ -219,21 +219,43 @@ def check_rule(sentence, arg1, arg2):
         w = w.head
     # check if valid paths to verbs by rule table
     if (list_of_arg1_arcs, list_of_arg2_arcs) in rule_paths:
+        verb1 = list_of_arg1_arcs[-1]
+        verb2 = list_of_arg2_arcs[-1]
+        
         # get the value of that dict which is the indicator for same verb
         should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 =\
             rule_paths[(list_of_arg1_arcs, list_of_arg2_arcs)]
         if should_be_same_verb:
             # validate its the same verb
-            if list_of_arg1_arcs[-1] != list_of_arg2_arcs[-1]:
+            if verb1 != verb2:
                 return False
         else:
-            # check if there path is valid
-            # TODO
-            pass
-        if should_arg1_from_left and (list_of_arg1_arcs[-1].idx < arg1_word.idx):
+            # check if their path is valid
+            verbs = [verb1]
+            found_good_path = False
+            w = verb1
+            while w.dep_ != "ROOT":
+                if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
+                    return False
+                w = w.head
+                if w == verb2:
+                    found_good_path = True
+                    break
+                verbs.append(w)
+            
+            if not found_good_path:
+                w = verb2
+                while w.dep_ != "ROOT":
+                    if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
+                        return False
+                    w = w.head
+                    if w in verbs:
+                        break
+        
+        if should_arg1_from_left and (verb1.idx < arg1_word.idx):
             return False
         
-        if should_arg2_from_left and (list_of_arg2_arcs[-1].idx < arg2_word.idx):
+        if should_arg2_from_left and (verb2.idx < arg2_word.idx):
             return False
         
         if should_arg1_before_arg2 and (arg1_word.idx > arg2_word.idx):
