@@ -139,68 +139,6 @@ def print_my_tree(unicode_text):
         print_mod(s)
 
 
-def find_tree(text, out, g_index, nlp):
-    d = nlp(text)
-
-    for span in d.sents:
-        out.append(Sentence(span, g_index + text.find(span.text), g_index + text.find(span.text) + len(span.text) - 1))
-
-
-def break_sgm(path, nlp):
-    f = io.open(path, "r", encoding="utf-8").read()
-    complete_text = f.strip().replace("\n", " ")
-    # this is specific for bug. we replace very non natural occurring of '/"' or '"/' to ' "' or '" ' accordingly
-    # it happens in only two files exactly, namly:
-    #   data/bn/timex2norm/CNN_ENG_20030605_153000.9.sgm
-    #   data//bc//timex2norm//CNN_CF_20030303.1900.02.sgm
-    complete_text = complete_text.replace("/\"", " \"").replace("\"/", "\" ")
-    pointer = 0
-    ace_indices = 0
-    sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
-    start_collecting = False
-    copy_of_complete_text = complete_text
-    # relevant_text = []
-    while pointer != len(complete_text):
-        match = re.search("<.*?>", copy_of_complete_text)
-        found = copy_of_complete_text[match.start(): match.end()]
-        
-        if start_collecting:
-            text_to_tree = copy_of_complete_text[:match.start()]
-            text_to_tree = text_to_tree.rstrip()
-            text_with_trail_spaces_len = len(text_to_tree)
-            text_to_tree = text_to_tree.lstrip()
-            spaces_len = text_with_trail_spaces_len - len(text_to_tree)
-            if len(text_to_tree) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>"]:
-                find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
-                # relevant_text.append((text_to_tree, ace_indices + spaces_len))
-                # sentences.append(
-                #     Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
-            # elif len(text_to_tree) > 0:
-        
-        if found == "<TEXT>":
-            start_collecting = True
-        
-        ace_indices += match.start()
-        pointer += match.end()
-        copy_of_complete_text = copy_of_complete_text[match.end():]
-    
-    # i = 0
-    # pointer = 0
-    # broken_sentences = nlp(u" ".join([text for (text, start) in relevant_text]).replace(" \"", " {").replace("\" ", "} ").replace(" ... ", " ~#*"))
-    # for broken_sentence in broken_sentences.sents:
-    #     text_to_copy = broken_sentence.text.replace(" {", " \"").replace("} ", "\" ").replace("}", "\"").replace("{", "\"").replace("~#*", "... ")
-    #     find_pos = relevant_text[i][0][pointer:].find(text_to_copy)
-    #     if find_pos == -1:
-    #         i += 1
-    #         pointer = 0
-    #         sentence_start = relevant_text[i][1]
-    #     else:
-    #         sentence_start = relevant_text[i][1] + pointer + find_pos
-    #     sentences.append(Sentence(text_to_copy, [], sentence_start, sentence_start + len(text_to_copy) - 1))
-    #     pointer += len(text_to_copy)
-    return sentences
-
-
 def check_rule(sentence, arg1, arg2):
     arg1_word = None
     arg2_word = None
@@ -278,6 +216,68 @@ def check_rule(sentence, arg1, arg2):
             return False
     
     return True
+
+
+def find_tree(text, out, g_index, nlp):
+    d = nlp(text)
+
+    for span in d.sents:
+        out.append(Sentence(span, g_index + text.find(span.text), g_index + text.find(span.text) + len(span.text) - 1))
+
+
+def break_sgm(path, nlp):
+    f = io.open(path, "r", encoding="utf-8").read()
+    complete_text = f.strip().replace("\n", " ")
+    # this is specific for bug. we replace very non natural occurring of '/"' or '"/' to ' "' or '" ' accordingly
+    # it happens in only two files exactly, namly:
+    #   data/bn/timex2norm/CNN_ENG_20030605_153000.9.sgm
+    #   data//bc//timex2norm//CNN_CF_20030303.1900.02.sgm
+    complete_text = complete_text.replace("/\"", " \"").replace("\"/", "\" ")
+    pointer = 0
+    ace_indices = 0
+    sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
+    start_collecting = False
+    copy_of_complete_text = complete_text
+    # relevant_text = []
+    while pointer != len(complete_text):
+        match = re.search("<.*?>", copy_of_complete_text)
+        found = copy_of_complete_text[match.start(): match.end()]
+        
+        if start_collecting:
+            text_to_tree = copy_of_complete_text[:match.start()]
+            text_to_tree = text_to_tree.rstrip()
+            text_with_trail_spaces_len = len(text_to_tree)
+            text_to_tree = text_to_tree.lstrip()
+            spaces_len = text_with_trail_spaces_len - len(text_to_tree)
+            if len(text_to_tree) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>"]:
+                find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
+                # relevant_text.append((text_to_tree, ace_indices + spaces_len))
+                # sentences.append(
+                #     Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
+            # elif len(text_to_tree) > 0:
+        
+        if found == "<TEXT>":
+            start_collecting = True
+        
+        ace_indices += match.start()
+        pointer += match.end()
+        copy_of_complete_text = copy_of_complete_text[match.end():]
+    
+    # i = 0
+    # pointer = 0
+    # broken_sentences = nlp(u" ".join([text for (text, start) in relevant_text]).replace(" \"", " {").replace("\" ", "} ").replace(" ... ", " ~#*"))
+    # for broken_sentence in broken_sentences.sents:
+    #     text_to_copy = broken_sentence.text.replace(" {", " \"").replace("} ", "\" ").replace("}", "\"").replace("{", "\"").replace("~#*", "... ")
+    #     find_pos = relevant_text[i][0][pointer:].find(text_to_copy)
+    #     if find_pos == -1:
+    #         i += 1
+    #         pointer = 0
+    #         sentence_start = relevant_text[i][1]
+    #     else:
+    #         sentence_start = relevant_text[i][1] + pointer + find_pos
+    #     sentences.append(Sentence(text_to_copy, [], sentence_start, sentence_start + len(text_to_copy) - 1))
+    #     pointer += len(text_to_copy)
+    return sentences
 
 
 def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
