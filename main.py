@@ -62,6 +62,7 @@ rule_paths = {
     ("dobj", "nsubjpass") : (False, True, False, False)
 }
 
+
 class Counters(Enum):
     TP = 0,
     FN = 1,
@@ -79,7 +80,7 @@ def threaded_displacy(docs, port):
     spacy.displacy.serve(docs, style='dep', options={'compact': True}, port=port)
 
 
-def dep_view(relations):
+def print_web_dependency(relations):
     global port_inc
     import spacy
     
@@ -99,22 +100,22 @@ def dep_view(relations):
     return False, p
 
 
-def dep_views(relations):
+def print_web_dependencies(relations):
     finished = False
     processes = []
     while not finished:
-        finished, p = dep_view(relations)
+        finished, p = print_web_dependency(relations)
         if not finished:
             processes.append(p)
     not_interesting = [process.terminate for process in processes]
 
 
-def print_relations(relations):
+def print_colored_relations(relations):
     for i, relation in enumerate(relations):
         print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
 
 
-def print_statistics(subtype, doc_triplets):
+def print_rules_statistics(subtype, doc_triplets):
     import spacy
     nlp = spacy.load('en_core_web_sm')
     counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
@@ -532,9 +533,9 @@ def main(path, cmd_subtype=None):
     relations = []
     walk_all(subtype, path, relations, doc_triplets)
     print_type(meta_type, str(subtype))
-    print_relations(relations)
-    print_statistics(subtype, doc_triplets)
-    dep_views(relations)
+    print_colored_relations(relations)
+    print_rules_statistics(subtype, doc_triplets)
+    print_web_dependencies(relations)
     print("Run time: %.2f" % (time.time() - start))
 
 
