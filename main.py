@@ -149,12 +149,17 @@ def find_tree(text, out, g_index, nlp):
 def break_sgm(path, nlp):
     f = io.open(path, "r", encoding="utf-8").read()
     complete_text = f.strip().replace("\n", " ")
+    # this is specific for bug. we replace very non natural occurring of '/"' or '"/' to ' "' or '" ' accordingly
+    # it happens in only two files exactly, namly:
+    #   data/bn/timex2norm/CNN_ENG_20030605_153000.9.sgm
+    #   data//bc//timex2norm//CNN_CF_20030303.1900.02.sgm
+    complete_text = complete_text.replace("/\"", " \"").replace("\"/", "\" ")
     pointer = 0
     ace_indices = 0
     sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
     start_collecting = False
     copy_of_complete_text = complete_text
-    relevant_text = []
+    # relevant_text = []
     while pointer != len(complete_text):
         match = re.search("<.*?>", copy_of_complete_text)
         found = copy_of_complete_text[match.start(): match.end()]
@@ -199,102 +204,80 @@ def break_sgm(path, nlp):
 def check_rule(sentence, arg1, arg2):
     arg1_word = None
     arg2_word = None
+    # TODO: take care of args that have head longer than one word.
     for word in sentence.span:
-        if arg1.start == word.idx + sentence.start:
+        word_start = word.idx - sentence.span.start_char + sentence.start
+        if word_start <= arg1.start <= word_start + len(word.text) - 1:
             arg1_word = word
-        if arg2.start == word.idx + sentence.start:
+        if word_start <= arg2.start <= word_start + len(word.text) - 1:
             arg2_word = word
     
     # find arg1 first verb
     list_of_arg1_arcs = []
     w = arg1_word
-    while w.pos != "VERB":
+    verb1 = None
+    while w.pos_ != "VERB":
         list_of_arg1_arcs.append(w.dep_)
         w = w.head
+        verb1 = w
+        if w.dep_ == "ROOT" and w.pos_ != "VERB":
+            return False
+    
     # find arg2 first verb
     list_of_arg2_arcs = []
     w = arg2_word
-    while w.pos != "VERB":
+    verb2 = None
+    while w.pos_ != "VERB":
         list_of_arg2_arcs.append(w.dep_)
         w = w.head
+        verb2 = w
+        if w.dep_ == "ROOT" and w.pos_ != "VERB":
+            return False
+    
     # check if valid paths to verbs by rule table
-    if ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs)) in rule_paths:
-        verb1 = list_of_arg1_arcs[-1]
-        verb2 = list_of_arg2_arcs[-1]
-        
-        # get the value of that dict which is the indicator for same verb
-        should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 =\
-            rule_paths[(list_of_arg1_arcs, list_of_arg2_arcs)]
-        if should_be_same_verb:
-            # validate its the same verb
-            if verb1 != verb2:
+    if ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs)) not in rule_paths:
+        return False
+    
+    # get the value of that dict which is the indicator for same verb
+    should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
+        rule_paths[("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs))]
+    if should_be_same_verb:
+        # validate its the same verb
+        if verb1 != verb2:
+            return False
+    else:
+        # check if their path is valid
+        verbs = [verb1]
+        found_good_path = False
+        w = verb1
+        while w.dep_ != "ROOT":
+            if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
                 return False
-        else:
-            # check if their path is valid
-            verbs = [verb1]
-            found_good_path = False
-            w = verb1
+            w = w.head
+            if w == verb2:
+                found_good_path = True
+                break
+            verbs.append(w)
+        
+        if not found_good_path:
+            w = verb2
             while w.dep_ != "ROOT":
                 if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
                     return False
                 w = w.head
-                if w == verb2:
-                    found_good_path = True
+                if w in verbs:
                     break
-                verbs.append(w)
-            
-            if not found_good_path:
-                w = verb2
-                while w.dep_ != "ROOT":
-                    if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
-                        return False
-                    w = w.head
-                    if w in verbs:
-                        break
         
         if should_arg1_from_left and (verb1.idx < arg1_word.idx):
             return False
         
-        if should_arg2_from_left and (verb2.idx < arg2_word.idx):
+        if should_arg2_from_right and (verb2.idx < arg2_word.idx):
             return False
         
         if should_arg1_before_arg2 and (arg1_word.idx > arg2_word.idx):
             return False
     
     return True
-    # verbal = []
-    # level = 0
-    # # TODO build verbal using BFS
-    # bfs()
-    #
-    # # assume we get a head list from one to the other, or from both to common ancestor
-    # if arg1_word.is_ancestor(arg2_word):
-    #
-    # elif arg2_word.is_ancestor(arg1_word):
-    #
-    # else:
-    #     lca = list(set(arg1_word.ancestors) & set(arg1_word.ancestors))[0]
-    #
-    #     children
-    #     head
-    #     left_edge
-    #     lefts
-    #     right_edge
-    #     rights
-    #     n_lefts
-    #     n_rights
-    #     subtree
-    #     dep_
-    #
-    # # test the rule
-    # is_arg1_left = arg1.start > arg2.start
-    # # if (((arg1_word.dep_ in ["nsubj", "nsubjpass", "poss"] and is_arg1_left) or (arg1_word.dep_ in ["nsubj", "dobj", "pobj"] and not is_arg1_left)) and
-    # #     ((arg2_word.dep_ in ["nsubj", "nsubjpass", "poss", "advmod", "dobj"] and not is_arg1_left) or (arg2_word.dep_ in ["nsubj", "dobj", "pobj", "advmod"] and is_arg1_left)) and
-    # #     )
-    # if
-    #     return True
-    # else:
-    #     return False
 
 
 def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
@@ -306,12 +289,14 @@ def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
         in_sentence = True
         
         while in_sentence and entity_index < len(entities):
+            if entities[entity_index].start < sentence.start:
+                prev_entity_index += 1
             if entities[entity_index].start > sentence.end:
                 in_sentence = False
             else:
                 if entities[entity_index].end > sentence.end:
                     print("Entity was broken by wrong sentence splitting:"
-                          "\n\tFilePath=%s,\n\tEntityID=%s,\n\tSplitedSentence=%s" % (sgm_path, entities[entity_index].id, sentence.text))
+                          "\n\tFilePath=%s,\n\tEntityID=%s,\n\tSplitedSentence=%s" % (sgm_path, entities[entity_index].id, sentence.span.text))
                     del entities[entity_index]
                     continue
                 entity_index += 1
