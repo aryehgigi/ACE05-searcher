@@ -72,83 +72,6 @@ class Counters(Enum):
     TNN = 5
 
 
-def threaded_displacy(docs, port):
-    import sys
-    import os
-    import spacy
-    sys.stdout = open(os.devnull, 'w')
-    spacy.displacy.serve(docs, style='dep', options={'compact': True}, port=port)
-
-
-def print_web_dependency(relations):
-    global port_inc
-    import spacy
-    
-    print("*****************************************************************************************************\n")
-    lines = input("Choose line numbers (space separated), for comparision.\n")
-    if lines == 'Q':
-        return True, None
-    lines =[int(num) for num in lines.split()]
-    
-    nlp = spacy.load('en_core_web_sm')
-    docs = []
-    for line in lines:
-        docs.append(nlp(relations[line - 1].orig))
-    
-    p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc])
-    p.start()
-    port_inc += 1
-    return False, p
-
-
-def print_web_dependencies(relations):
-    finished = False
-    processes = []
-    while not finished:
-        finished, p = print_web_dependency(relations)
-        if not finished:
-            processes.append(p)
-    not_interesting = [process.terminate for process in processes]
-
-
-def print_colored_relations(relations):
-    for i, relation in enumerate(relations):
-        print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
-    print("\n")
-
-
-def print_rules_statistics(subtype, doc_triplets):
-    print("*****************************************************************************************************\n")
-    import spacy
-    nlp = spacy.load('en_core_web_sm')
-    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
-    for doc_triplet in doc_triplets:
-        main_rule(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], counters)
-    
-    print("Recall: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FN])))
-    print("Precision: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FPO] + counters[Counters.FPN])))
-    print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
-    print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
-
-
-def print_mod(cur, count=0):
-    if len(cur['modifiers']) == 0:
-        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
-    else:
-        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
-        for mi in cur['modifiers']:
-            print_mod(mi, count + 1)
-
-
-def print_my_tree(unicode_text):
-    import spacy
-    nlp = spacy.load('en_core_web_sm')
-    d = nlp(unicode_text)
-    d2 = d.print_tree()
-    for s in d2:
-        print_mod(s)
-
-
 def check_rule(sentence, arg1, arg2):
     arg1_word = None
     arg2_word = None
@@ -336,6 +259,83 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
                             counters[Counters.TNO] += 1
         
         prev_entity_index = entity_index
+
+
+def print_rules_statistics(subtype, doc_triplets):
+    print("*****************************************************************************************************\n")
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
+    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
+    for doc_triplet in doc_triplets:
+        main_rule(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], counters)
+    
+    print("Recall: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FN])))
+    print("Precision: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FPO] + counters[Counters.FPN])))
+    print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
+    print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
+
+
+def threaded_displacy(docs, port):
+    import sys
+    import os
+    import spacy
+    sys.stdout = open(os.devnull, 'w')
+    spacy.displacy.serve(docs, style='dep', options={'compact': True}, port=port)
+
+
+def print_web_dependency(relations):
+    global port_inc
+    import spacy
+    
+    print("*****************************************************************************************************\n")
+    lines = input("Choose line numbers (space separated), for comparision.\n")
+    if lines == 'Q':
+        return True, None
+    lines =[int(num) for num in lines.split()]
+    
+    nlp = spacy.load('en_core_web_sm')
+    docs = []
+    for line in lines:
+        docs.append(nlp(relations[line - 1].orig))
+    
+    p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc])
+    p.start()
+    port_inc += 1
+    return False, p
+
+
+def print_web_dependencies(relations):
+    finished = False
+    processes = []
+    while not finished:
+        finished, p = print_web_dependency(relations)
+        if not finished:
+            processes.append(p)
+    not_interesting = [process.terminate for process in processes]
+
+
+def print_colored_relations(relations):
+    for i, relation in enumerate(relations):
+        print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
+    print("\n")
+
+
+def print_mod(cur, count=0):
+    if len(cur['modifiers']) == 0:
+        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
+    else:
+        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
+        for mi in cur['modifiers']:
+            print_mod(mi, count + 1)
+
+
+def print_my_tree(unicode_text):
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
+    d = nlp(unicode_text)
+    d2 = d.print_tree()
+    for s in d2:
+        print_mod(s)
 
 
 # TODO - fix
