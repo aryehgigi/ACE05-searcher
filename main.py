@@ -91,7 +91,7 @@ def check_rule(sentence, arg1, arg2):
         list_of_arg1_arcs.append(w.dep_)
         w = w.head
         verb1 = w
-        if w.dep_ == "ROOT" and w.pos_ != "VERB":
+        if (w == arg2_word) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
             return False, None
     
     # find arg2 first verb
@@ -102,7 +102,7 @@ def check_rule(sentence, arg1, arg2):
         list_of_arg2_arcs.append(w.dep_)
         w = w.head
         verb2 = w
-        if w.dep_ == "ROOT" and w.pos_ != "VERB":
+        if (w == arg1_word) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
             return False, None
     
     # check if valid paths to verbs by rule table
