@@ -114,7 +114,13 @@ def print_relations(relations):
         print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
 
 
-def print_statistics(counters):
+def print_statistics(subtype, doc_triplets):
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
+    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
+    for doc_triplet in doc_triplets:
+        main_rule(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], counters)
+    
     print("Recall: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FN])))
     print("Precision: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FPO] + counters[Counters.FPN])))
     print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
@@ -159,7 +165,7 @@ def check_rule(sentence, arg1, arg2):
         w = w.head
         verb1 = w
         if w.dep_ == "ROOT" and w.pos_ != "VERB":
-            return False
+            return False, None
     
     # find arg2 first verb
     list_of_arg2_arcs = []
@@ -170,11 +176,11 @@ def check_rule(sentence, arg1, arg2):
         w = w.head
         verb2 = w
         if w.dep_ == "ROOT" and w.pos_ != "VERB":
-            return False
+            return False, None
     
     # check if valid paths to verbs by rule table
     if ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs)) not in rule_paths:
-        return False
+        return True, False
     
     # get the value of that dict which is the indicator for same verb
     should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
@@ -182,7 +188,7 @@ def check_rule(sentence, arg1, arg2):
     if should_be_same_verb:
         # validate its the same verb
         if verb1 != verb2:
-            return False
+            return True, False
     else:
         # check if their path is valid
         verbs = [verb1]
@@ -190,7 +196,7 @@ def check_rule(sentence, arg1, arg2):
         w = verb1
         while w.dep_ != "ROOT":
             if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
-                return False
+                return True, False
             w = w.head
             if w == verb2:
                 found_good_path = True
@@ -201,21 +207,21 @@ def check_rule(sentence, arg1, arg2):
             w = verb2
             while w.dep_ != "ROOT":
                 if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
-                    return False
+                    return True, False
                 w = w.head
                 if w in verbs:
                     break
         
         if should_arg1_from_left and (verb1.idx < arg1_word.idx):
-            return False
+            return True, False
         
         if should_arg2_from_right and (verb2.idx < arg2_word.idx):
-            return False
+            return True, False
         
         if should_arg1_before_arg2 and (arg1_word.idx > arg2_word.idx):
-            return False
+            return True, False
     
-    return True
+    return True, True
 
 
 def find_tree(text, out, g_index, nlp):
@@ -280,7 +286,7 @@ def break_sgm(path, nlp):
     return sentences
 
 
-def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
+def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
     sentences = break_sgm(sgm_path, nlp)
     prev_entity_index = 0
     entity_index = 0
@@ -307,7 +313,9 @@ def main_rule(subtype, sgm_path, nlp, entities, relations, counters):
                     continue
                 if (arg1.type + "-" + arg2.type) in relation_arg_combos[subtype]:
                     pair = (arg1.id, arg2.id)
-                    did_match = check_rule(sentence, arg1, arg2)
+                    is_verb, did_match = check_rule(sentence, arg1, arg2)
+                    if not is_verb:
+                        continue
                     if did_match:
                         if pair not in relations:
                             counters[Counters.FPN] += 1
@@ -446,9 +454,7 @@ def extract_doc(root, data_type, path):
     return entities_by_idx, relations_by_pair
 
 
-def walk_all(subtype, path, wanted_relation_list, counters):
-    import spacy
-    nlp = spacy.load('en_core_web_sm')
+def walk_all(subtype, path, wanted_relation_list, doc_triplets):
     for subdir, dirs, files in os.walk(path):
         if 'timex2norm' in subdir:
             for filename in files:
@@ -459,10 +465,10 @@ def walk_all(subtype, path, wanted_relation_list, counters):
                     assert(len(data_type) == 1)
                     data_type = data_type[0]
                     entities_by_idx, relations_by_pair = extract_doc(root, data_type, subdir + os.sep + filename)
+                    doc_triplets.append(((subdir + os.sep + filename).replace('apf.xml', 'sgm'), entities_by_idx, relations_by_pair))
                     for k, relation in relations_by_pair.items():
                         if relation.rel_type == subtype:
                             wanted_relation_list.append(relation)
-                    main_rule(subtype, (subdir + os.sep + filename).replace('apf.xml', 'sgm'), nlp, entities_by_idx, relations_by_pair, counters)
 
 
 def print_type(cur_type, subtype):
@@ -522,12 +528,12 @@ def main(path, cmd_subtype=None):
         print_usage()
         return
     
+    doc_triplets = []
     relations = []
-    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
-    walk_all(subtype, path, relations, counters)
-    print_statistics(counters)
+    walk_all(subtype, path, relations, doc_triplets)
     print_type(meta_type, str(subtype))
     print_relations(relations)
+    print_statistics(subtype, doc_triplets)
     dep_views(relations)
     print("Run time: %.2f" % (time.time() - start))
 
