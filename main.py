@@ -84,6 +84,7 @@ def print_web_dependency(relations):
     global port_inc
     import spacy
     
+    print("*****************************************************************************************************\n")
     lines = input("Choose line numbers (space separated), for comparision.\n")
     if lines == 'Q':
         return True, None
@@ -113,9 +114,11 @@ def print_web_dependencies(relations):
 def print_colored_relations(relations):
     for i, relation in enumerate(relations):
         print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
+    print("\n")
 
 
 def print_rules_statistics(subtype, doc_triplets):
+    print("*****************************************************************************************************\n")
     import spacy
     nlp = spacy.load('en_core_web_sm')
     counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
@@ -125,7 +128,7 @@ def print_rules_statistics(subtype, doc_triplets):
     print("Recall: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FN])))
     print("Precision: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FPO] + counters[Counters.FPN])))
     print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
-    print("FPR(non relations): %.2f" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
+    print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
 
 
 def print_mod(cur, count=0):
@@ -291,7 +294,7 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
     sentences = break_sgm(sgm_path, nlp)
     prev_entity_index = 0
     entity_index = 0
-
+    
     for sentence in sentences:
         in_sentence = True
         
@@ -364,7 +367,7 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
 #     return
 
 
-def extract_relations(xml_relation, entities, rel_type, data_type, relations):
+def extract_relations(path, xml_relation, entities, rel_type, data_type, relations):
     start = 0
     head_start = 0
     head_start2 = 0
@@ -377,16 +380,18 @@ def extract_relations(xml_relation, entities, rel_type, data_type, relations):
         if cur_child.tag == 'relation_mention':
             arg1_id = -1
             arg2_id = -1
+            arg1_type = None
+            arg2_type = None
             for sub_rel_mention in cur_child:
                 if sub_rel_mention.tag == 'extent':
                     assert(sub_rel_mention[0].tag == 'charseq')
                     original_sentence = sub_rel_mention[0].text
                     start = int(sub_rel_mention[0].attrib['START'])
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-1':
-                    head_start, head_end = entities[sub_rel_mention.attrib['REFID']]
+                    head_start, head_end, arg1_type = entities[sub_rel_mention.attrib['REFID']]
                     arg1_id = sub_rel_mention.attrib['REFID']
                 elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-2':
-                    head_start2, head_end2 = entities[sub_rel_mention.attrib['REFID']]
+                    head_start2, head_end2, arg2_type = entities[sub_rel_mention.attrib['REFID']]
                     arg2_id = sub_rel_mention.attrib['REFID']
             
             first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color =   \
@@ -405,12 +410,14 @@ def extract_relations(xml_relation, entities, rel_type, data_type, relations):
                 "\033[0m" +                                                               \
                 original_sentence[last_head_end - start + 1:]
             if (arg1_id, arg2_id) in relations:
-                if relations[(arg1_id, arg2_id)].rel_type == "Membership" and rel_type == "Employment":
-                    continue
-                elif relations[(arg1_id, arg2_id)].rel_type == "Employment" and rel_type == "Membership":
-                    print("Notification: relation Employment was overridden by Membership of ID: %s" % cur_child.attrib["ID"])
-                else:
-                    print("Notification: bad duplicate found, ID: %s, Type: %s" % (cur_child.attrib["ID"], rel_type))
+                print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
+                      (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
+                # if relations[(arg1_id, arg2_id)].rel_type == "Membership" and rel_type == "Employment":
+                #     continue
+                # elif relations[(arg1_id, arg2_id)].rel_type == "Employment" and rel_type == "Membership":
+                #     print("Notification: relation Employment was overridden by Membership of ID: %s" % cur_child.attrib["ID"])
+                # else:
+                #     print("Notification: bad duplicate found, ID: %s, Type: %s" % (cur_child.attrib["ID"], rel_type))
                     #import pdb;pdb.set_trace()  # TODO - remove this in the future
             relations[(arg1_id, arg2_id)] = Relation(rel_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
 
@@ -437,9 +444,9 @@ def extract_doc(root, data_type, path):
                     head_end = int(entity_mention[1][0].attrib['END'])
                     
                     entities_by_id[entity_mention.attrib['ID']] =\
-                        int(head_start), int(head_end)
+                        int(head_start), int(head_end), child.attrib['TYPE']
                     entities_by_id[child.attrib['ID']] =\
-                        int(head_start), int(head_end)
+                        int(head_start), int(head_end), child.attrib['TYPE']
                     entities_by_idx.append(Entity(
                         entity_mention.attrib['ID'], child.attrib['TYPE'], head_start, head_end, head, extent))
     
@@ -450,7 +457,7 @@ def extract_doc(root, data_type, path):
     for child in root[0]:
         if child.tag == 'relation':
             extract_relations(
-                child, entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
+                path, child, entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
     
     return entities_by_idx, relations_by_pair
 
@@ -473,6 +480,7 @@ def walk_all(subtype, path, wanted_relation_list, doc_triplets):
 
 
 def print_type(cur_type, subtype):
+    print("*****************************************************************************************************\n")
     print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
     print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
     print()
