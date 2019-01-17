@@ -73,36 +73,36 @@ class Counters(Enum):
 
 
 def check_rule(sentence, arg1, arg2):
-    arg1_word = None
-    arg2_word = None
-    # TODO: take care of args that have head longer than one word.
+    arg_words = [None, None]
     for word in sentence.span:
         word_start = word.idx - sentence.span.start_char + sentence.start
-        if word_start <= arg1.start <= word_start + len(word.text) - 1:
-            arg1_word = word
-        if word_start <= arg2.start <= word_start + len(word.text) - 1:
-            arg2_word = word
+        word_end = word_start + len(word.text) - 1
+        for i, argx in enumerate([arg1, arg2]):
+            if argx.start <= word_start <= argx.end or\
+               argx.start <= word_end <= argx.end:
+                if ((not arg_words[i]) or word.is_ancestor(arg_words[i])):
+                    arg_words[i] = word
     
     # find arg1 first verb
     list_of_arg1_arcs = []
-    w = arg1_word
+    w = arg_words[0]
     verb1 = None
     while w.pos_ != "VERB":
         list_of_arg1_arcs.append(w.dep_)
         w = w.head
         verb1 = w
-        if (w == arg2_word) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
+        if (w == arg_words[1]) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
             return False, None
     
     # find arg2 first verb
     list_of_arg2_arcs = []
-    w = arg2_word
+    w = arg_words[1]
     verb2 = None
     while w.pos_ != "VERB":
         list_of_arg2_arcs.append(w.dep_)
         w = w.head
         verb2 = w
-        if (w == arg1_word) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
+        if (w == arg_words[0]) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
             return False, None
     
     # check if valid paths to verbs by rule table
@@ -139,13 +139,13 @@ def check_rule(sentence, arg1, arg2):
                 if w in verbs:
                     break
         
-        if should_arg1_from_left and (verb1.idx < arg1_word.idx):
+        if should_arg1_from_left and (verb1.idx < arg_words[0].idx):
             return True, False
         
-        if should_arg2_from_right and (verb2.idx < arg2_word.idx):
+        if should_arg2_from_right and (verb2.idx < arg_words[1].idx):
             return True, False
         
-        if should_arg1_before_arg2 and (arg1_word.idx > arg2_word.idx):
+        if should_arg1_before_arg2 and (arg_words[0].idx > arg_words[1].idx):
             return True, False
     
     return True, True
