@@ -18,6 +18,7 @@ import multiprocessing
 import xml.etree.ElementTree as ET
 
 port_inc = 5000
+broken_entities_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
 Relation = namedtuple("Relation", "rel_type data_type orig colored_text")
@@ -50,12 +51,12 @@ relation_arg_combos = {
     'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']}
 # (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
 rule_paths = {
-    ("nsubj", "prep-pobj"): (False, True, True, True),
-    ("nsubjpass", "prep-pobj") : (False, True, True, True),
+    ("nsubj", "pobj-prep"): (False, True, True, True),
+    ("nsubjpass", "pobj-prep") : (False, True, True, True),
     ("nsubj", "dobj") : (False, True, True, True),
-    ("nsubj", "advmod") : (True, True, True, True),
+    ("nsubj", "advmod") : (False, True, True, True),
     ("dobj", "dobj") : (False, False, False, False),
-    ("poss-attr", "prep-pobj") : (False, True, True, True),
+    ("poss-attr", "pobj-prep") : (False, True, True, True),
     ("pobj", "nsubj") : (True, False, False, False),
     ("nsubj", "nsubj") : (False, False, False, False),
     ("nsubj", "poss-prep-nsubj") : (False, False, False, False),
@@ -78,17 +79,20 @@ def check_rule(sentence, arg1, arg2):
         word_start = word.idx - sentence.span.start_char + sentence.start
         word_end = word_start + len(word.text) - 1
         for i, argx in enumerate([arg1, arg2]):
-            if argx.start <= word_start <= argx.end or\
-               argx.start <= word_end <= argx.end:
-                if ((not arg_words[i]) or word.is_ancestor(arg_words[i])):
+            if argx.start <= word_start <= argx.end or \
+                                    argx.start <= word_end <= argx.end or \
+                                    word_start <= argx.start <= word_end:
+                if (not arg_words[i]) or word.is_ancestor(arg_words[i]):
                     arg_words[i] = word
     
     # find arg1 first verb
     list_of_arg1_arcs = []
+    arg1_ancestors_pre_verb = []
     w = arg_words[0]
     verb1 = None
     while w.pos_ != "VERB":
         list_of_arg1_arcs.append(w.dep_)
+        arg1_ancestors_pre_verb.append(w)
         w = w.head
         verb1 = w
         if (w == arg_words[1]) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
@@ -102,7 +106,7 @@ def check_rule(sentence, arg1, arg2):
         list_of_arg2_arcs.append(w.dep_)
         w = w.head
         verb2 = w
-        if (w == arg_words[0]) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
+        if (w in arg1_ancestors_pre_verb) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
             return False, None
     
     # check if valid paths to verbs by rule table
@@ -142,7 +146,7 @@ def check_rule(sentence, arg1, arg2):
         if should_arg1_from_left and (verb1.idx < arg_words[0].idx):
             return True, False
         
-        if should_arg2_from_right and (verb2.idx < arg_words[1].idx):
+        if should_arg2_from_right and (verb2.idx > arg_words[1].idx):
             return True, False
         
         if should_arg1_before_arg2 and (arg_words[0].idx > arg_words[1].idx):
@@ -214,6 +218,7 @@ def break_sgm(path, nlp):
 
 
 def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
+    global broken_entities_counter
     sentences = break_sgm(sgm_path, nlp)
     prev_entity_index = 0
     entity_index = 0
@@ -228,8 +233,9 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
                 in_sentence = False
             else:
                 if entities[entity_index].end > sentence.end:
-                    print("Entity was broken by wrong sentence splitting:"
-                          "\n\tFilePath=%s,\n\tEntityID=%s,\n\tSplitedSentence=%s" % (sgm_path, entities[entity_index].id, sentence.span.text))
+                    broken_entities_counter += 1
+                    print("%d. Entity was broken by wrong sentence splitting:"
+                          "\n\tFilePath= %s,\n\tEntityID= %s,\n\tSplitedSentence= %s" % (broken_entities_counter, sgm_path, entities[entity_index].id, sentence.span.text))
                     del entities[entity_index]
                     continue
                 entity_index += 1
