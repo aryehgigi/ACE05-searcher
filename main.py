@@ -277,6 +277,7 @@ def print_rules_statistics(subtype, doc_triplets):
     
     print("Recall: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FN])))
     print("Precision: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FPO] + counters[Counters.FPN])))
+    print("PrecisionOther: %.2f" % ((counters[Counters.TP] + counters[Counters.FPO]) / (counters[Counters.TP] + counters[Counters.FPO] + counters[Counters.FPN])))
     print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
     print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
 
