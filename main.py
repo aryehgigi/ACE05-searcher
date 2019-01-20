@@ -3,6 +3,7 @@
 # 2. some places are not written very smart pythonicaly speaking
 # 3. replace ascii art
 # 4. maybe replace the entire displacy idea, either all in web or all in CLI but not half-half.
+# 5. terminating the process is not clean, the script will not die, fix this
 
 import os
 import sys
