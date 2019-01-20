@@ -108,7 +108,7 @@ def print_web_dependency(nlp, relations):
     lines = input("Choose line numbers (space separated), for comparision.\n")
     if lines == 'Q':
         return True, None
-    lines =[int(num) for num in lines.split()]
+    lines = [int(num) for num in lines.split()]
     
     # convert text to spaCy Docs
     docs = []
@@ -182,11 +182,11 @@ def check_rule(sentence, arg1, arg2):
     # get the indicators according to the paths-to-verbs
     should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
         rule_paths[("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs))]
-    if should_be_same_verb:
+    if verb1 != verb2:
         # validate its the same verb
-        if verb1 != verb2:
+        if should_be_same_verb:
             return True, False
-    else:
+        
         # check if their path is valid
         verbs = [verb1]
         found_good_path = False
@@ -213,22 +213,22 @@ def check_rule(sentence, arg1, arg2):
                     found_good_path = True
                     break
         
-        # if they  are both not in each others valid-connected-clique then the path is not valid
+        # if they are both not in each others valid-connected-clique then the path is not valid
         # this means that the trigger cant fire through the broken verb path - as the rules defined it
         if not found_good_path:
             return True, False
-        
-        # by rules definition, check order between arg1 and verb1
-        if should_arg1_from_left and (verb1.idx < arg_words[0].idx):
-            return True, False
-        
-        # by rules definition, check order between arg2 and verb2
-        if should_arg2_from_right and (verb2.idx > arg_words[1].idx):
-            return True, False
-        
-        # by rules definition, check order between arg1 and arg2
-        if should_arg1_before_arg2 and (arg_words[0].idx > arg_words[1].idx):
-            return True, False
+    
+    # by rules definition, check order between arg1 and verb1
+    if should_arg1_from_left and (verb1.idx < arg_words[0].idx):
+        return True, False
+    
+    # by rules definition, check order between arg2 and verb2
+    if should_arg2_from_right and (verb2.idx > arg_words[1].idx):
+        return True, False
+    
+    # by rules definition, check order between arg1 and arg2
+    if should_arg1_before_arg2 and (arg_words[0].idx > arg_words[1].idx):
+        return True, False
     
     # if nothing violated the rules, the entity pair has the relation
     return True, True
@@ -238,7 +238,7 @@ def break_sgm(path, nlp):
     f = io.open(path, "r", encoding="utf-8").read()
     complete_text = f.strip().replace("\n", " ")
     # this is specific for bug. we replace very non natural occurring of '/"' or '"/' to ' "' or '" ' accordingly
-    # it happens in only two files exactly, namly:
+    # it happens in only two files exactly, namely:
     #   data/bn/timex2norm/CNN_ENG_20030605_153000.9.sgm
     #   data//bc//timex2norm//CNN_CF_20030303.1900.02.sgm
     complete_text = complete_text.replace("/\"", " \"").replace("\"/", "\" ")
@@ -499,7 +499,7 @@ def extract_doc(root, data_type, path):
             for grandchild in child:
                 if grandchild.tag == 'relation_mention':
                     extract_relations(
-                        path,grandchild,  entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
+                        path, grandchild, entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
     
     return ordered_entities, relations_by_pair
 
