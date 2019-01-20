@@ -16,6 +16,7 @@ from pathlib import Path
 import multiprocessing
 import xml.etree.ElementTree as ET
 
+DEBUG = False
 port_inc = 5000
 broken_entities_counter = 0
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
@@ -303,8 +304,9 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
             else:
                 if entities[entity_index].end > sentence.end:
                     broken_entities_counter += 1
-                    print("%d. Entity was broken by wrong sentence splitting:"
-                          "\n\tFilePath= %s,\n\tEntityID= %s,\n\tSplitedSentence= %s" % (broken_entities_counter, sgm_path, entities[entity_index].id, sentence.span.text))
+                    if DEBUG:
+                        print("%d. Entity was broken by wrong sentence splitting:"
+                              "\n\tFilePath= %s,\n\tEntityID= %s,\n\tSplitedSentence= %s" % (broken_entities_counter, sgm_path, entities[entity_index].id, sentence.span.text))
                     del entities[entity_index]
                     continue
                 entity_index += 1
@@ -444,10 +446,11 @@ def extract_relations(path, relation_mention, entities, rel_type, data_type, rel
         "\033[0m" +                                                               \
         original_sentence[last_head_end - start + 1:]
     
-    # notify user in case both arguments already participated in a former relation
-    if (arg1_id, arg2_id) in relations:
-        print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
-              (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
+    if DEBUG:
+        # notify user in case both arguments already participated in a former relation
+        if (arg1_id, arg2_id) in relations:
+            print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
+                  (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
     relations[(arg1_id, arg2_id)] = Relation(rel_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
 
 
