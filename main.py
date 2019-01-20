@@ -66,6 +66,7 @@ rule_paths = {
 valid_verb_connectors = ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]
 valid_verb_binary_connectors = ["prep-pcomp"]
 
+
 class Counters(Enum):
     TP = 0,
     FN = 1,
