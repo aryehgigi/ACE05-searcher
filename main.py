@@ -3,8 +3,6 @@
 # 2. some places are not written very smart pythonicaly speaking
 # 3. replace ascii art
 # 4. maybe replace the entire displacy idea, either all in web or all in CLI but not half-half.
-# 5. rewrite for speed up
-# 6. nlp sentence breaking bug
 
 import os
 import sys
@@ -23,13 +21,15 @@ data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
 Relation = namedtuple("Relation", "rel_type data_type orig colored_text")
 Sentence = namedtuple("Sentence", "span start end")
-relation_types = {0: ('ART', ['User-Owner-Inventor-Manufacturer']),
-         1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
-         2: ('METONYMY', [None]),
-         3: ('ORG-AFF', ['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']),
-         4: ('PART-WHOLE', ['Artifact', 'Geographical', 'Subsidiary']),
-         5: ('PER-SOC', ['Business', 'Family', 'Lasting-Personal']),
-         6: ('PHYS', ['Located', 'Near'])}
+relation_types = {
+    0: ('ART', ['User-Owner-Inventor-Manufacturer']),
+    1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
+    2: ('METONYMY', [None]),
+    3: ('ORG-AFF', ['Employment', 'Founder', 'Ownership', 'Student-Alum', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership']),
+    4: ('PART-WHOLE', ['Artifact', 'Geographical', 'Subsidiary']),
+    5: ('PER-SOC', ['Business', 'Family', 'Lasting-Personal']),
+    6: ('PHYS', ['Located', 'Near'])
+}
 relation_arg_combos = {
     'Near': ['PER-FAC', 'PER-GPE', 'PER-LOC', 'FAC-FAC', 'FAC-GPE', 'FAC-LOC', 'GPE-FAC', 'GPE-GPE', 'GPE-LOC', 'LOC-FAC', 'LOC-GPE', 'LOC-LOC'],
     'Located': ['PER-FAC', 'PER-GPE', 'PER-LOC'],
@@ -48,21 +48,23 @@ relation_arg_combos = {
     'Membership': ['PER-ORG', 'ORG-ORG', 'GPE-ORG'],
     'User-Owner-Inventor-Manufacturer': ['PER-WEA', 'PER-VEH', 'PER-FAC', 'ORG-WEA', 'ORG-VEH', 'ORG-FAC', 'GPE-WEA', 'GPE-VEH', 'GPE-FAC'],
     'Citizen-Resident-Religion-Ethnicity': ['PER-PER', 'PER-LOC', 'PER-GPE', 'PER-ORG'],
-    'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']}
+    'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']
+}
 # (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
 rule_paths = {
-    ("nsubj", "pobj-prep"): (False, True, True, True),
-    ("nsubjpass", "pobj-prep") : (False, True, True, True),
-    ("nsubj", "dobj") : (False, True, True, True),
-    ("nsubj", "advmod") : (False, True, True, True),
-    ("dobj", "dobj") : (False, False, False, False),
-    ("poss-attr", "pobj-prep") : (False, True, True, True),
-    ("pobj", "nsubj") : (True, False, False, False),
-    ("nsubj", "nsubj") : (False, False, False, False),
-    ("nsubj", "poss-prep-nsubj") : (False, False, False, False),
-    ("dobj", "nsubjpass") : (False, True, False, False)
+    ("nsubj",       "pobj-prep"):       (False, True, True, True),
+    ("nsubjpass",   "pobj-prep"):       (False, True, True, True),
+    ("nsubj",       "dobj"):            (False, True, True, True),
+    ("nsubj",       "advmod"):          (False, True, True, True),
+    ("dobj",        "dobj"):            (False, False, False, False),
+    ("poss-attr",   "pobj-prep"):       (False, True, True, True),
+    ("pobj",        "nsubj"):           (True, False, False, False),
+    ("nsubj",       "nsubj"):           (False, False, False, False),
+    ("nsubj",       "poss-prep-nsubj"): (False, False, False, False),
+    ("dobj",        "nsubjpass"):       (False, True, False, False)
 }
-
+valid_verb_connectors = ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]
+valid_verb_binary_connectors = ["prep-pcomp"]
 
 class Counters(Enum):
     TP = 0,
@@ -71,6 +73,67 @@ class Counters(Enum):
     FPO = 3,
     TNO = 4,
     TNN = 5
+
+
+def print_mod(cur, count=0):
+    if len(cur['modifiers']) == 0:
+        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
+    else:
+        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
+        for mi in cur['modifiers']:
+            print_mod(mi, count + 1)
+
+
+def print_my_tree(unicode_text):
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
+    d = nlp(unicode_text)
+    d2 = d.print_tree()
+    for s in d2:
+        print_mod(s)
+
+
+def threaded_displacy(docs, port):
+    import spacy
+    spacy.displacy.serve(docs, style='dep', options={'compact': True}, port=port)
+
+
+def print_web_dependency(nlp, relations):
+    global port_inc
+    
+    # get user line numbers input
+    lines = input("Choose line numbers (space separated), for comparision.\n")
+    if lines == 'Q':
+        return True, None
+    lines =[int(num) for num in lines.split()]
+    
+    # convert text to spaCy Docs
+    docs = []
+    for line in lines:
+        docs.append(nlp(relations[line - 1].orig))
+    
+    # run Displacy in a new process
+    p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc])
+    p.start()
+    port_inc += 1
+    return False, p
+
+
+def print_web_dependencies(relations):
+    import spacy
+    nlp = spacy.load('en_core_web_sm')
+    print("*****************************************************************************************************\n")
+    
+    finished = False
+    processes = []
+    # allow multiple web prints asynchronously
+    while not finished:
+        finished, p = print_web_dependency(nlp, relations)
+        if not finished:
+            processes.append(p)
+    
+    # terminate them all
+    _ = [process.terminate for process in processes]
 
 
 def check_rule(sentence, arg1, arg2):
@@ -113,7 +176,7 @@ def check_rule(sentence, arg1, arg2):
     if ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs)) not in rule_paths:
         return True, False
     
-    # get the value of that dict which is the indicator for same verb
+    # get the indicators according to the paths-to-verbs
     should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
         rule_paths[("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs))]
     if should_be_same_verb:
@@ -125,41 +188,47 @@ def check_rule(sentence, arg1, arg2):
         verbs = [verb1]
         found_good_path = False
         w = verb1
+        
+        # find first verb valid-connected-clique
         while w.dep_ != "ROOT":
-            if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
-                return True, False
+            if not ((w.dep_ in valid_verb_connectors) or ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors)):
+                break
             w = w.head
             if w == verb2:
                 found_good_path = True
                 break
             verbs.append(w)
         
+        # if verb2 not in verb1's valid-connected-clique, check if verb1 is in verb2's valid-connected-clique
         if not found_good_path:
             w = verb2
             while w.dep_ != "ROOT":
-                if (w.dep_ not in ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]) and not ((w.dep_ == "prep") and (w.head.dep_ == "pcomp")):
+                if not ((w.dep_ in valid_verb_connectors) or ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors)):
                     return True, False
                 w = w.head
                 if w in verbs:
+                    found_good_path = True
                     break
         
+        # if they  are both not in each others valid-connected-clique then the path is not valid
+        # this means that the trigger cant fire through the broken verb path - as the rules defined it
+        if not found_good_path:
+            return True, False
+        
+        # by rules definition, check order between arg1 and verb1
         if should_arg1_from_left and (verb1.idx < arg_words[0].idx):
             return True, False
         
+        # by rules definition, check order between arg2 and verb2
         if should_arg2_from_right and (verb2.idx > arg_words[1].idx):
             return True, False
         
+        # by rules definition, check order between arg1 and arg2
         if should_arg1_before_arg2 and (arg_words[0].idx > arg_words[1].idx):
             return True, False
     
+    # if nothing violated the rules, the entity pair has the relation
     return True, True
-
-
-def find_tree(text, out, g_index, nlp):
-    d = nlp(text)
-
-    for span in d.sents:
-        out.append(Sentence(span, g_index + text.find(span.text), g_index + text.find(span.text) + len(span.text) - 1))
 
 
 def break_sgm(path, nlp):
@@ -173,59 +242,57 @@ def break_sgm(path, nlp):
     pointer = 0
     ace_indices = 0
     sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
-    start_collecting = False
-    copy_of_complete_text = complete_text
-    # relevant_text = []
+    consumed_text_tag = False
+    consumed_text = complete_text
+    
+    # while al text is not consumed
     while pointer != len(complete_text):
-        match = re.search("<.*?>", copy_of_complete_text)
-        found = copy_of_complete_text[match.start(): match.end()]
+        # break the sgm by tags
+        match = re.search("<.*?>", consumed_text)
+        found = consumed_text[match.start(): match.end()]
         
-        if start_collecting:
-            text_to_tree = copy_of_complete_text[:match.start()]
-            text_to_tree = text_to_tree.rstrip()
-            text_with_trail_spaces_len = len(text_to_tree)
-            text_to_tree = text_to_tree.lstrip()
-            spaces_len = text_with_trail_spaces_len - len(text_to_tree)
-            if len(text_to_tree) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>"]:
-                find_tree(text_to_tree, sentences, ace_indices + spaces_len, nlp)
-                # relevant_text.append((text_to_tree, ace_indices + spaces_len))
-                # sentences.append(
-                #     Sentence(text_to_tree, [], ace_indices + spaces_len, ace_indices + spaces_len + len(text_to_tree) - 1))
-            # elif len(text_to_tree) > 0:
+        # if we already reached the text tag, we take the paragraph
+        # which is text between tags, break it to sentences and store them with their true indices
+        if consumed_text_tag:
+            # remove spaces, but keep count of trailing ones
+            paragraph = consumed_text[:match.start()]
+            paragraph = paragraph.rstrip()
+            text_with_trail_spaces_len = len(paragraph)
+            paragraph = paragraph.lstrip()
+            spaces_len = text_with_trail_spaces_len - len(paragraph)
+            
+            # give up text in POSTER, SPEAKER, POSTDATE, SUBJECT for now
+            if len(paragraph) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>"]:
+                # add Sentence object to the list, after breaking to paragraph to sentences
+                g_index = ace_indices + spaces_len
+                d = nlp(paragraph)
+                for span in d.sents:
+                    sentences.append(Sentence(span, g_index + paragraph.find(span.text), g_index + paragraph.find(span.text) + len(span.text) - 1))
         
+        # found start of interesting text
         if found == "<TEXT>":
-            start_collecting = True
+            consumed_text_tag = True
         
+        # forward pointers
         ace_indices += match.start()
         pointer += match.end()
-        copy_of_complete_text = copy_of_complete_text[match.end():]
+        consumed_text = consumed_text[match.end():]
     
-    # i = 0
-    # pointer = 0
-    # broken_sentences = nlp(u" ".join([text for (text, start) in relevant_text]).replace(" \"", " {").replace("\" ", "} ").replace(" ... ", " ~#*"))
-    # for broken_sentence in broken_sentences.sents:
-    #     text_to_copy = broken_sentence.text.replace(" {", " \"").replace("} ", "\" ").replace("}", "\"").replace("{", "\"").replace("~#*", "... ")
-    #     find_pos = relevant_text[i][0][pointer:].find(text_to_copy)
-    #     if find_pos == -1:
-    #         i += 1
-    #         pointer = 0
-    #         sentence_start = relevant_text[i][1]
-    #     else:
-    #         sentence_start = relevant_text[i][1] + pointer + find_pos
-    #     sentences.append(Sentence(text_to_copy, [], sentence_start, sentence_start + len(text_to_copy) - 1))
-    #     pointer += len(text_to_copy)
     return sentences
 
 
 def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
     global broken_entities_counter
+    
+    # get sentences from sgm file
     sentences = break_sgm(sgm_path, nlp)
+    
+    # for every sentence
     prev_entity_index = 0
     entity_index = 0
-    
     for sentence in sentences:
+        # find entities in sentence
         in_sentence = True
-        
         while in_sentence and entity_index < len(entities):
             if entities[entity_index].start < sentence.start:
                 prev_entity_index += 1
@@ -240,12 +307,18 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
                     continue
                 entity_index += 1
         
+        # for every pair of entities in sentence, that applies for SUBTYPE
         for arg1 in entities[prev_entity_index: entity_index]:
             for arg2 in entities[prev_entity_index: entity_index]:
                 if arg1.id == arg2.id:
                     continue
                 if (arg1.type + "-" + arg2.type) in relation_arg_combos[subtype]:
                     pair = (arg1.id, arg2.id)
+                    # TODO - remove
+                    # if pair in relations and relations[pair].orig.startswith(u"u.s. forces"):
+                    #     import pdb;pdb.set_trace()
+                    
+                    # check rule and add to counters appropriately
                     is_verb, did_match = check_rule(sentence, arg1, arg2)
                     if not is_verb:
                         continue
@@ -261,6 +334,8 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
                             counters[Counters.TNN] += 1
                         elif relations[pair].rel_type == subtype:
                             counters[Counters.FN] += 1
+                            # TODO - remove
+                            # print(relations[pair].orig)
                         else:
                             counters[Counters.TNO] += 1
         
@@ -282,67 +357,17 @@ def print_rules_statistics(subtype, doc_triplets):
     print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
 
 
-def threaded_displacy(docs, port):
-    import sys
-    import os
-    import spacy
-    sys.stdout = open(os.devnull, 'w')
-    spacy.displacy.serve(docs, style='dep', options={'compact': True}, port=port)
-
-
-def print_web_dependency(relations):
-    global port_inc
-    import spacy
-    
-    print("*****************************************************************************************************\n")
-    lines = input("Choose line numbers (space separated), for comparision.\n")
-    if lines == 'Q':
-        return True, None
-    lines =[int(num) for num in lines.split()]
-    
-    nlp = spacy.load('en_core_web_sm')
-    docs = []
-    for line in lines:
-        docs.append(nlp(relations[line - 1].orig))
-    
-    p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc])
-    p.start()
-    port_inc += 1
-    return False, p
-
-
-def print_web_dependencies(relations):
-    finished = False
-    processes = []
-    while not finished:
-        finished, p = print_web_dependency(relations)
-        if not finished:
-            processes.append(p)
-    not_interesting = [process.terminate for process in processes]
-
-
 def print_colored_relations(relations):
     for i, relation in enumerate(relations):
         print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
     print("\n")
 
 
-def print_mod(cur, count=0):
-    if len(cur['modifiers']) == 0:
-        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
-    else:
-        print('\t' * count + '<--- ' + cur['arc'] + ' \"' + cur['word'] + '\"')
-        for mi in cur['modifiers']:
-            print_mod(mi, count + 1)
-
-
-def print_my_tree(unicode_text):
-    import spacy
-    nlp = spacy.load('en_core_web_sm')
-    d = nlp(unicode_text)
-    d2 = d.print_tree()
-    for s in d2:
-        print_mod(s)
+def print_type(cur_type, subtype):
+    print("*****************************************************************************************************\n")
+    print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
+    print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
+    print()
 
 
 # TODO - fix
@@ -374,123 +399,126 @@ def print_my_tree(unicode_text):
 #     return
 
 
-def extract_relations(path, xml_relation, entities, rel_type, data_type, relations):
+def extract_relations(path, relation_mention, entities, rel_type, data_type, relations):
     start = 0
     head_start = 0
     head_start2 = 0
     head_end = 0
     head_end2 = 0
-    
     original_sentence = ''
+    arg1_id = -1
+    arg2_id = -1
+    arg1_type = None
+    arg2_type = None
     
-    for cur_child in xml_relation:
-        if cur_child.tag == 'relation_mention':
-            arg1_id = -1
-            arg2_id = -1
-            arg1_type = None
-            arg2_type = None
-            for sub_rel_mention in cur_child:
-                if sub_rel_mention.tag == 'extent':
-                    assert(sub_rel_mention[0].tag == 'charseq')
-                    original_sentence = sub_rel_mention[0].text
-                    start = int(sub_rel_mention[0].attrib['START'])
-                elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-1':
-                    head_start, head_end, arg1_type = entities[sub_rel_mention.attrib['REFID']]
-                    arg1_id = sub_rel_mention.attrib['REFID']
-                elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-2':
-                    head_start2, head_end2, arg2_type = entities[sub_rel_mention.attrib['REFID']]
-                    arg2_id = sub_rel_mention.attrib['REFID']
-            
-            first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color =   \
-                (head_start, head_start2, head_end, head_end2, "\033[1;32;0m", "\033[1;31;0m")              \
-                if head_start < head_start2 else                                                            \
-                (head_start2, head_start, head_end2, head_end, "\033[1;31;0m", "\033[1;32;0m")
-            
-            colored_text =                                                                \
-                original_sentence[:first_head_start - start] +                            \
-                first_color +                                                             \
-                original_sentence[first_head_start - start: first_head_end - start + 1] + \
-                "\033[0m" +                                                               \
-                original_sentence[first_head_end - start + 1: last_head_start - start] +  \
-                second_color +                                                            \
-                original_sentence[last_head_start - start: last_head_end - start + 1] +   \
-                "\033[0m" +                                                               \
-                original_sentence[last_head_end - start + 1:]
-            if (arg1_id, arg2_id) in relations:
-                print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
-                      (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
-                # if relations[(arg1_id, arg2_id)].rel_type == "Membership" and rel_type == "Employment":
-                #     continue
-                # elif relations[(arg1_id, arg2_id)].rel_type == "Employment" and rel_type == "Membership":
-                #     print("Notification: relation Employment was overridden by Membership of ID: %s" % cur_child.attrib["ID"])
-                # else:
-                #     print("Notification: bad duplicate found, ID: %s, Type: %s" % (cur_child.attrib["ID"], rel_type))
-                    #import pdb;pdb.set_trace()  # TODO - remove this in the future
-            relations[(arg1_id, arg2_id)] = Relation(rel_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
+    # find relation arguments and extent
+    for sub_rel_mention in relation_mention:
+        if sub_rel_mention.tag == 'extent':
+            assert(sub_rel_mention[0].tag == 'charseq')
+            original_sentence = sub_rel_mention[0].text
+            start = int(sub_rel_mention[0].attrib['START'])
+        elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-1':
+            head_start, head_end, arg1_type = entities[sub_rel_mention.attrib['REFID']]
+            arg1_id = sub_rel_mention.attrib['REFID']
+        elif sub_rel_mention.tag == 'relation_mention_argument' and sub_rel_mention.attrib['ROLE'] == 'Arg-2':
+            head_start2, head_end2, arg2_type = entities[sub_rel_mention.attrib['REFID']]
+            arg2_id = sub_rel_mention.attrib['REFID']
+    
+    # assign indices and colores according to argument order
+    first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color =   \
+        (head_start, head_start2, head_end, head_end2, "\033[1;32;0m", "\033[1;31;0m")              \
+        if head_start < head_start2 else                                                            \
+        (head_start2, head_start, head_end2, head_end, "\033[1;31;0m", "\033[1;32;0m")
+    
+    # assemble the original extent text with the colored arguments
+    colored_text =                                                                \
+        original_sentence[:first_head_start - start] +                            \
+        first_color +                                                             \
+        original_sentence[first_head_start - start: first_head_end - start + 1] + \
+        "\033[0m" +                                                               \
+        original_sentence[first_head_end - start + 1: last_head_start - start] +  \
+        second_color +                                                            \
+        original_sentence[last_head_start - start: last_head_end - start + 1] +   \
+        "\033[0m" +                                                               \
+        original_sentence[last_head_end - start + 1:]
+    
+    # notify user in case both arguments already participated in a former relation
+    if (arg1_id, arg2_id) in relations:
+        print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
+              (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
+    relations[(arg1_id, arg2_id)] = Relation(rel_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
+
+
+def extract_entities(entity_mention, entity, entities_by_id, ordered_entities):
+    # validate correct position in xml
+    assert(
+        (entity_mention[0].tag == 'extent') and
+        (entity_mention[0][0].tag == 'charseq') and
+        (entity_mention[1].tag == 'head') and
+        (entity_mention[1][0].tag == 'charseq'))
+    
+    # store all entity mentions in a:
+    # 1. {ID: (start, end, type)} dict,
+    # 2. Entity ordered list (see Entity namedtuple)
+    extent = entity_mention[0][0].text
+    head = entity_mention[1][0].text
+    head_start = int(entity_mention[1][0].attrib['START'])
+    head_end = int(entity_mention[1][0].attrib['END'])
+    
+    entities_by_id[entity_mention.attrib['ID']] =\
+        int(head_start), int(head_end), entity.attrib['TYPE']
+    entities_by_id[entity.attrib['ID']] =\
+        int(head_start), int(head_end), entity.attrib['TYPE']
+    ordered_entities.append(Entity(
+        entity_mention.attrib['ID'], entity.attrib['TYPE'], head_start, head_end, head, extent))
 
 
 def extract_doc(root, data_type, path):
     entities_by_id = {}
-    entities_by_idx = []
+    ordered_entities = []
     relations_by_pair = {}
     
-    # store all entity mentions in a {ID:(start,end)} dict, and Entity ordered list
+    # extract all entity mentions
     for child in root[0]:
         if child.tag == 'entity':
             for grandchild in child:
                 if grandchild.tag == 'entity_mention':
-                    entity_mention = grandchild
-                    assert(
-                        (entity_mention[0].tag == 'extent') and
-                        (entity_mention[0][0].tag == 'charseq') and
-                        (entity_mention[1].tag == 'head') and
-                        (entity_mention[1][0].tag == 'charseq'))
-                    extent = entity_mention[0][0].text
-                    head = entity_mention[1][0].text
-                    head_start = int(entity_mention[1][0].attrib['START'])
-                    head_end = int(entity_mention[1][0].attrib['END'])
-                    
-                    entities_by_id[entity_mention.attrib['ID']] =\
-                        int(head_start), int(head_end), child.attrib['TYPE']
-                    entities_by_id[child.attrib['ID']] =\
-                        int(head_start), int(head_end), child.attrib['TYPE']
-                    entities_by_idx.append(Entity(
-                        entity_mention.attrib['ID'], child.attrib['TYPE'], head_start, head_end, head, extent))
+                    extract_entities(grandchild, child, entities_by_id, ordered_entities)
     
-    # order the entities_by_idx by start and then by end
-    entities_by_idx = sorted(entities_by_idx, key=operator.attrgetter('start', 'end'))
+    # order the ordered_entities by start and then by end
+    ordered_entities = sorted(ordered_entities, key=operator.attrgetter('start', 'end'))
     
-    # extract relations
+    # extract all relation mentions
     for child in root[0]:
         if child.tag == 'relation':
-            extract_relations(
-                path, child, entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
+            for grandchild in child:
+                if grandchild.tag == 'relation_mention':
+                    extract_relations(
+                        path,grandchild,  entities_by_id, 'None' if 'SUBTYPE' not in child.attrib else child.attrib['SUBTYPE'], data_type, relations_by_pair)
     
-    return entities_by_idx, relations_by_pair
+    return ordered_entities, relations_by_pair
 
 
 def walk_all(subtype, path, wanted_relation_list, doc_triplets):
+    # loop on all data files, and choose only apf.xml from timex2norm
     for subdir, dirs, files in os.walk(path):
         if 'timex2norm' in subdir:
             for filename in files:
                 if filename.endswith(".apf.xml"):
+                    # get xml root and data type (e.g. broadcast news)
                     tree = ET.parse(subdir + os.sep + filename)
                     root = tree.getroot()
                     data_type = [i for i in data_types if (os.sep + i + os.sep) in subdir]
                     assert(len(data_type) == 1)
                     data_type = data_type[0]
-                    entities_by_idx, relations_by_pair = extract_doc(root, data_type, subdir + os.sep + filename)
-                    doc_triplets.append(((subdir + os.sep + filename).replace('apf.xml', 'sgm'), entities_by_idx, relations_by_pair))
+                    
+                    # extract entities and relations from doc, store them in triplets with corresponding sgm files,
+                    # and keep copy of SUBTYPE type relations.
+                    ordered_entities, relations_by_pair = extract_doc(root, data_type, subdir + os.sep + filename)
+                    doc_triplets.append(((subdir + os.sep + filename).replace('apf.xml', 'sgm'), ordered_entities, relations_by_pair))
                     for k, relation in relations_by_pair.items():
                         if relation.rel_type == subtype:
                             wanted_relation_list.append(relation)
-
-
-def print_type(cur_type, subtype):
-    print("*****************************************************************************************************\n")
-    print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
-    print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
-    print()
 
 
 def get_subtype():
@@ -529,11 +557,14 @@ def print_usage():
 def main(path, cmd_subtype=None):
     import time
     start = time.time()
+    
+    # getting subtype from cmd param or user input
     if not cmd_subtype:
         subtype = get_subtype()
     else:
         subtype = cmd_subtype if cmd_subtype != 'None' else None
     
+    # validate subtype and find corresponding Type
     meta_type = ""
     found = False
     for i, (cur_type, subtypes) in relation_types.items():
@@ -544,9 +575,12 @@ def main(path, cmd_subtype=None):
         print_usage()
         return
     
+    # iterate and extract everything from documents
     doc_triplets = []
     relations = []
     walk_all(subtype, path, relations, doc_triplets)
+    
+    # print (and execute) all missions
     print_type(meta_type, str(subtype))
     print_colored_relations(relations)
     print_rules_statistics(subtype, doc_triplets)
@@ -555,8 +589,11 @@ def main(path, cmd_subtype=None):
 
 
 if __name__ == "__main__":
+    # Usage: main.py path_to_data [subtype|None] (None for Metonymy)
+    # 2 params means no subtype added
     if len(sys.argv) == 2:
         main(sys.argv[1])
+    # 3 params means including subtype
     elif len(sys.argv) == 3:
         main(sys.argv[1], sys.argv[2])
     else:
