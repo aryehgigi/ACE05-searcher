@@ -264,7 +264,7 @@ def break_sgm(path, nlp):
             spaces_len = text_with_trail_spaces_len - len(paragraph)
             
             # give up text in POSTER, SPEAKER, POSTDATE, SUBJECT for now
-            if len(paragraph) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>"]:
+            if len(paragraph) != 0 and found not in ["</POSTER>", "</SPEAKER>", "</POSTDATE>", "</SUBJECT>", "</ENDTIME>"]:
                 # add Sentence object to the list, after breaking to paragraph to sentences
                 g_index = ace_indices + spaces_len
                 d = nlp(paragraph)
