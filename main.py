@@ -50,7 +50,7 @@ relation_arg_combos = {
     'Membership': ['PER-ORG', 'ORG-ORG', 'GPE-ORG'],
     'User-Owner-Inventor-Manufacturer': ['PER-WEA', 'PER-VEH', 'PER-FAC', 'ORG-WEA', 'ORG-VEH', 'ORG-FAC', 'GPE-WEA', 'GPE-VEH', 'GPE-FAC'],
     'Citizen-Resident-Religion-Ethnicity': ['PER-PER', 'PER-LOC', 'PER-GPE', 'PER-ORG'],
-    'Org-Location-Origin': ['ORG-LOC', 'ORG-GPE']
+    'Org-Location': ['ORG-LOC', 'ORG-GPE']
 }
 # (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
 rule_paths = {
@@ -58,15 +58,16 @@ rule_paths = {
     ("nsubjpass",   "pobj-prep"):       (False, True, True, True),
     ("nsubj",       "dobj"):            (False, True, True, True),
     ("nsubj",       "advmod"):          (False, True, True, True),
-    ("dobj",        "dobj"):            (False, False, False, False),
-    ("poss-attr",   "pobj-prep"):       (False, True, True, True),
+    ("dobj",        "dobj"):            (False, False, True, False),
+    ("poss-attr",   "pobj-prep"):       (False, False, True, True),
     ("pobj",        "nsubj"):           (True, False, False, False),
     ("nsubj",       "nsubj"):           (False, False, False, False),
     ("nsubj",       "poss-prep-nsubj"): (False, False, False, False),
-    ("dobj",        "nsubjpass"):       (False, True, False, False)
+    ("dobj",        "nsubjpass"):       (False, True, False, False),
+    ("dobj",        "nsubj"):            (False, False, False, False)
 }
 valid_verb_connectors = ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl"]
-valid_verb_binary_connectors = ["prep-pcomp"]
+valid_verb_binary_connectors = ["pcomp-prep"]
 
 
 class Counters(Enum):
@@ -139,6 +140,16 @@ def print_web_dependencies(relations):
     _ = [process.terminate for process in processes]
 
 
+def check_order_by_bool(b, arg1, arg2):
+    if b:
+        if arg1 < arg2:
+            return False
+    else:
+        if arg1 > arg2:
+            return False
+    return True
+
+
 def check_rule(sentence, arg1, arg2):
     arg_words = [None, None]
     for word in sentence.span:
@@ -157,7 +168,8 @@ def check_rule(sentence, arg1, arg2):
     w = arg_words[0]
     verb1 = None
     while w.pos_ != "VERB":
-        list_of_arg1_arcs.append(w.dep_)
+        if w.dep_ != "conj" and w.dep_ != "compound":
+            list_of_arg1_arcs.append(w.dep_)
         arg1_ancestors_pre_verb.append(w)
         w = w.head
         verb1 = w
@@ -169,19 +181,26 @@ def check_rule(sentence, arg1, arg2):
     w = arg_words[1]
     verb2 = None
     while w.pos_ != "VERB":
-        list_of_arg2_arcs.append(w.dep_)
+        if w.dep_ != "conj" and w.dep_ != "compound":
+            list_of_arg2_arcs.append(w.dep_)
         w = w.head
         verb2 = w
         if (w in arg1_ancestors_pre_verb) or (w.dep_ == "ROOT" and w.pos_ != "VERB"):
             return False, None
+    arg1_arcs = re.sub('(pobj-prep(-)*)+', 'pobj-prep-', "-".join(list_of_arg1_arcs))
+    arg2_arcs = re.sub('(pobj-prep(-)*)+', 'pobj-prep-', "-".join(list_of_arg2_arcs))
+    if len(arg1_arcs) > 0 and arg1_arcs[-1] == '-':
+        arg1_arcs = arg1_arcs[:-1]
+    if len(arg2_arcs) > 0 and arg2_arcs[-1] == '-':
+        arg2_arcs = arg2_arcs[:-1]
     
     # check if valid paths to verbs by rule table
-    if ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs)) not in rule_paths:
+    if (arg1_arcs, arg2_arcs) not in rule_paths:
         return True, False
     
     # get the indicators according to the paths-to-verbs
     should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
-        rule_paths[("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs))]
+        rule_paths[(arg1_arcs, arg2_arcs)]
     if verb1 != verb2:
         # validate its the same verb
         if should_be_same_verb:
@@ -191,11 +210,18 @@ def check_rule(sentence, arg1, arg2):
         verbs = [verb1]
         found_good_path = False
         w = verb1
+        need_to_check = True
         
         # find first verb valid-connected-clique
         while w.dep_ != "ROOT":
-            if not ((w.dep_ in valid_verb_connectors) or ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors)):
-                break
+            if need_to_check:
+                if not (w.dep_ in valid_verb_connectors):
+                    if not ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors):
+                        break
+                    else:
+                        need_to_check = False
+            else:
+                need_to_check = True
             w = w.head
             if w == verb2:
                 found_good_path = True
@@ -203,35 +229,34 @@ def check_rule(sentence, arg1, arg2):
             verbs.append(w)
         
         # if verb2 not in verb1's valid-connected-clique, check if verb1 is in verb2's valid-connected-clique
+        need_to_check = True
         if not found_good_path:
             w = verb2
             while w.dep_ != "ROOT":
-                if not ((w.dep_ in valid_verb_connectors) or ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors)):
-                    return True, False
+                if need_to_check:
+                    if not (w.dep_ in valid_verb_connectors):
+                        if not ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors):
+                            return True, False
+                        else:
+                            need_to_check = False
+                else:
+                    need_to_check = True
                 w = w.head
                 if w in verbs:
                     found_good_path = True
                     break
-        
-        # if they are both not in each others valid-connected-clique then the path is not valid
-        # this means that the trigger cant fire through the broken verb path - as the rules defined it
-        if not found_good_path:
-            return True, False
-    
-    # by rules definition, check order between arg1 and verb1
-    if should_arg1_from_left and (verb1.idx < arg_words[0].idx):
-        return True, False
-    
-    # by rules definition, check order between arg2 and verb2
-    if should_arg2_from_right and (verb2.idx > arg_words[1].idx):
-        return True, False
-    
-    # by rules definition, check order between arg1 and arg2
-    if should_arg1_before_arg2 and (arg_words[0].idx > arg_words[1].idx):
-        return True, False
+            
+            # if they are both not in each others valid-connected-clique then the path is not valid
+            # this means that the trigger cant fire through the broken verb path - as the rules defined it
+            if not found_good_path:
+                return True, False
     
     # if nothing violated the rules, the entity pair has the relation
-    return True, True
+    return (True, True) if                                                                  \
+        check_order_by_bool(should_arg1_from_left, verb1.idx, arg_words[0].idx) and         \
+        check_order_by_bool(should_arg2_from_right, arg_words[1].idx, verb2.idx) and        \
+        check_order_by_bool(should_arg1_before_arg2, arg_words[1].idx, arg_words[0].idx)    \
+        else (True, False)
 
 
 def break_sgm(path, nlp):
