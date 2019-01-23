@@ -574,7 +574,7 @@ def get_subtype():
         while subtype not in range(len(relation_types[cur_type][1])):
             subtype = int(input(query)) - 1
     
-    print_types(relation_types[cur_type][0], relation_types[cur_type][1][subtype] if subtype is not None else 'None')
+    print_type(relation_types[cur_type][0], relation_types[cur_type][1][subtype] if subtype is not None else 'None')
     return relation_types[cur_type][1][subtype] if subtype is not None else None
 
 
