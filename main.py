@@ -343,9 +343,6 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
                     continue
                 if (arg1.type + "-" + arg2.type) in relation_arg_combos[subtype]:
                     pair = (arg1.id, arg2.id)
-                    # TODO - remove
-                    # if pair in relations and relations[pair].orig.startswith(u"u.s. forces"):
-                    #     import pdb;pdb.set_trace()
                     
                     # check rule and add to counters appropriately
                     is_verb, did_match = check_rule(sentence, arg1, arg2)
@@ -363,8 +360,6 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, counters):
                             counters[Counters.TNN] += 1
                         elif relations[pair].rel_type == subtype:
                             counters[Counters.FN] += 1
-                            # TODO - remove
-                            # print(relations[pair].orig)
                         else:
                             counters[Counters.TNO] += 1
         
@@ -376,6 +371,7 @@ def print_rules_statistics(subtype, doc_triplets):
     import spacy
     nlp = spacy.load('en_core_web_sm')
     counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
+    
     for doc_triplet in doc_triplets:
         main_rule(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], counters)
     
