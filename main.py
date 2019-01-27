@@ -20,6 +20,8 @@ DEBUG = False
 port_inc = 5000
 broken_entities_counter = 0
 broken_relations_counter = 0
+verb_tagged_entities_counter = 0
+last_verb_tagged_entity = None
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
 Relation = namedtuple("Relation", "id rel_type data_type orig colored_text")
@@ -78,6 +80,17 @@ class Counters(Enum):
     FPO = 3,
     TNO = 4,
     TNN = 5
+
+
+counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
+set_of_verb_arcs = set()
+subtypes_by_rules = {}
+rules_by_subtype = {}
+verbal = {}
+non_verbal = {}
+
+
+################################################################################################
 
 
 def print_mod(cur, count=0):
@@ -141,105 +154,69 @@ def print_web_dependencies(relations):
     _ = [process.terminate for process in processes]
 
 
-def check_rule(sentence, arg1, arg2):
-    arg_tokens = find_arg_tokens(sentence, pair[0], pair[1])
-    is_nominal1, verb1, list_of_arg1_arcs, arg1_ancestors_pre_verb = find_path_to_verb(arg_tokens[0])
-    is_nominal2, verb2, list_of_arg2_arcs, arg2_ancestors_pre_verb = find_path_to_verb(arg_tokens[1])
-    
-    # if nominal, or one is ancestor of the other (no verb between them) count as non-verbal and return
-    if is_nominal1 or is_nominal2 or arg_tokens[1] in arg1_ancestors_pre_verb or arg_tokens[0] in arg2_ancestors_pre_verb:
-        
-        return False, None
-    
-    arg1_arcs = re.sub('(pobj-prep(-)*)+', 'pobj-prep-', "-".join(list_of_arg1_arcs))
-    arg2_arcs = re.sub('(pobj-prep(-)*)+', 'pobj-prep-', "-".join(list_of_arg2_arcs))
-    if len(arg1_arcs) > 0 and arg1_arcs[-1] == '-':
-        arg1_arcs = arg1_arcs[:-1]
-    if len(arg2_arcs) > 0 and arg2_arcs[-1] == '-':
-        arg2_arcs = arg2_arcs[:-1]
-    
-    # check if valid paths to verbs by rule table
-    if (arg1_arcs, arg2_arcs) not in rule_paths:
-        return True, False
-    
-    # get the indicators according to the paths-to-verbs
+################################################################################################
+
+
+def update_dict_of_dicts(d, i, j, add=1):
+    if i in d:
+        d[i][j] = (d[i][j] + add) if j in d[i] else 1
+    else:
+        d[i] = {j: 1}
+
+
+def check_rule(path_pair, verb1, verb2, arg_words, pair, relations):
+    global counters
+
+    # TODO - debug this function
     should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
-        rule_paths[(arg1_arcs, arg2_arcs)]
-    if verb1 != verb2:
-        # validate its the same verb
-        if should_be_same_verb:
-            return True, False
-        
-        # check if their path is valid
-        verbs = [verb1]
-        found_good_path = False
-        w = verb1
-        need_to_check = True
-        
-        # find first verb valid-connected-clique
-        while w.dep_ != "ROOT":
-            if need_to_check:
-                if not (w.dep_ in valid_verb_connectors):
-                    if not ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors):
-                        break
-                    else:
-                        need_to_check = False
-            else:
-                need_to_check = True
-            w = w.head
-            if w == verb2:
-                found_good_path = True
-                break
-            verbs.append(w)
-        
-        # if verb2 not in verb1's valid-connected-clique, check if verb1 is in verb2's valid-connected-clique
-        need_to_check = True
-        if not found_good_path:
-            w = verb2
-            while w.dep_ != "ROOT":
-                if need_to_check:
-                    if not (w.dep_ in valid_verb_connectors):
-                        if not ((w.dep_ + "-" + w.head.dep_) in valid_verb_binary_connectors):
-                            return True, False
-                        else:
-                            need_to_check = False
-                else:
-                    need_to_check = True
-                w = w.head
-                if w in verbs:
-                    found_good_path = True
-                    break
-            
-            # if they are both not in each others valid-connected-clique then the path is not valid
-            # this means that the trigger cant fire through the broken verb path - as the rules defined it
-            if not found_good_path:
-                return True, False
+        rule_paths[path_pair]
     
-    # if nothing violated the rules, the entity pair has the relation
-    return (True, True) if                                                      \
-        not (should_arg1_from_left ^ (arg_words[0].idx < verb1.idx)) and        \
-        not (should_arg2_from_right ^ (verb2.idx < arg_words[1].idx)) and       \
-        not (should_arg1_before_arg2 ^ (arg_words[0].idx < arg_words[1].idx))   \
-        else (True, False)
+    if path_pair not in rule_paths or                               \
+       (should_be_same_verb and (verb1 != verb2)) or                \
+       (should_arg1_from_left ^ (arg_words[0].idx < verb1.idx)) or  \
+       (should_arg2_from_right ^ (verb2.idx < arg_words[1].idx)) or \
+       (should_arg1_before_arg2 ^ (arg_words[0].idx < arg_words[1].idx)):
+        if pair not in relations:
+            counters[Counters.TNN] += 1
+        elif relations[pair].rel_type == subtype:
+            counters[Counters.FN] += 1
+        else:
+            counters[Counters.TNO] += 1
+    else:  # did match
+        if pair not in relations:
+            counters[Counters.FPN] += 1
+        elif relations[pair].rel_type == subtype:
+            counters[Counters.TP] += 1
+        else:
+            counters[Counters.FPO] += 1
 
 
 def find_verbal_path(verbs):
-    set_of_verb_arcs = {""}
     paths_verb_to_ancestor = [[], []]
     
     # find paths from verbs to common ancestor
     for i in range(len(verbs)):
         j = (i + 1) % 2
         w = verbs[i]
-        try:
-            while not (w.is_ancestor(verbs[j]) or (w == verbs[j])):
-                set_of_verb_arcs.add(w.dep_)
-                paths_verb_to_ancestor[i].append(w.dep_)
-                w = w.head
-        except:
-            import pdb;pdb.set_trace()
+        while not (w.is_ancestor(verbs[j]) or (w == verbs[j])):
+            set_of_verb_arcs.add(w.dep_)
+            paths_verb_to_ancestor[i].append(w.dep_)
+            w = w.head
     
-    return set_of_verb_arcs, paths_verb_to_ancestor
+    return paths_verb_to_ancestor
+
+
+def manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs, apply_manipulation=False):
+    arg1_arcs = "-".join(list_of_arg1_arcs)
+    arg2_arcs = "-".join(list_of_arg2_arcs)
+    if apply_manipulation:
+        arg1_arcs = re.sub('(pobj-prep(-)*)+', 'pobj-prep-', arg1_arcs)
+        arg2_arcs = re.sub('(pobj-prep(-)*)+', 'pobj-prep-', arg1_arcs)
+        if len(arg1_arcs) > 0 and arg1_arcs[-1] == '-':
+            arg1_arcs = arg1_arcs[:-1]
+        if len(arg2_arcs) > 0 and arg2_arcs[-1] == '-':
+            arg2_arcs = arg2_arcs[:-1]
+    return arg1_arcs, arg2_arcs
 
 
 def find_path_to_verb(arg_token):
@@ -267,87 +244,63 @@ def find_path_to_verb(arg_token):
     return False, verb, list_of_arg_arcs, arg_ancestors_pre_verb
 
 
-def find_arg_tokens(sentence, arg1, arg2):
-    arg_tokens = [None, None]
+def find_arg_token(sentence, argx):
+    arg_token = None
     for word in sentence.span:
         word_start = word.idx - sentence.span.start_char + sentence.start
         word_end = word_start + len(word.text) - 1
-        for i, argx in enumerate([arg1, arg2]):
-            if argx.start <= word_start <= argx.end or \
-                                    argx.start <= word_end <= argx.end or \
-                                    word_start <= argx.start <= word_end:
-                if (not arg_tokens[i]) or word.is_ancestor(arg_tokens[i]):
-                    arg_tokens[i] = word
-    return arg_tokens
+        if argx.start <= word_start <= argx.end or \
+           argx.start <= word_end <= argx.end or \
+           word_start <= argx.start <= word_end:
+                if (not arg_token) or word.is_ancestor(arg_token):
+                    arg_token = word
+    return arg_token
 
 
-def apply_rules(sentence, pair, subtype, relations, counters):
-    if (pair[0].type + "-" + pair[1].type) in relation_arg_combos[subtype]:
-        # check rule and add to counters appropriately
-        is_verb, did_match = check_rule(sentence, pair[0], pair[1])
-        if not is_verb:
-            return
-        if did_match:
-            if pair not in relations:
-                counters[Counters.FPN] += 1
-            elif relations[pair].rel_type == subtype:
-                counters[Counters.TP] += 1
-            else:
-                counters[Counters.FPO] += 1
-        else:  # did not match
-            if pair not in relations:
-                counters[Counters.TNN] += 1
-            elif relations[pair].rel_type == subtype:
-                counters[Counters.FN] += 1
-            else:
-                counters[Counters.TNO] += 1
+def check_verb_tagged_entity(verb, arg):
+    global last_verb_tagged_entity, verb_tagged_entities_counter
+    if not verb:
+        if last_verb_tagged_entity != arg:
+            last_verb_tagged_entity = arg
+            if DEBUG:
+                verb_tagged_entities_counter += 1
+                print("%d. Entity was tagged as VERB, EntityInfo: %s " % (verb_tagged_entities_counter, last_verb_tagged_entity))
+        return True
+    return False
 
 
-def find_rules(sentence, arg1, arg2, subtype, subtypes_by_rules, rules_by_subtype, verbal, non_verbal):
-    arg_tokens = find_arg_tokens(sentence, arg1, arg2)
-    is_nominal1, verb1, list_of_arg1_arcs, arg1_ancestors_pre_verb = find_path_to_verb(arg_tokens[0])
-    is_nominal2, verb2, list_of_arg2_arcs, arg2_ancestors_pre_verb = find_path_to_verb(arg_tokens[1])
+# TODO - check order features (and any other boolean features)
+# TODO - maybe add in the future: path3 or list_of arcs, and boolean list
+def per_pair_rules(sentence, arg1, arg2, subtype, relations, apply_or_find):
+    global subtypes_by_rules, rules_by_subtype, verbal, non_verbal, last_verb_tagged_entity, verb_tagged_entities_counter
+    arg_token1 = find_arg_token(sentence, arg1)
+    arg_token2 = find_arg_token(sentence, arg2)
+    is_nominal1, verb1, list_of_arg1_arcs, arg1_ancestors_pre_verb = find_path_to_verb(arg_token1)
+    is_nominal2, verb2, list_of_arg2_arcs, arg2_ancestors_pre_verb = find_path_to_verb(arg_token2)
     
     # if nominal, or one is ancestor of the other (no verb between them) count as non-verbal and return
-    if is_nominal1 or is_nominal2 or (arg_tokens[1] in arg1_ancestors_pre_verb) or (arg_tokens[0] in arg2_ancestors_pre_verb):
-        if subtype in non_verbal:
-            non_verbal[subtype] += 1
-        else:
-            non_verbal[subtype] = 1
+    if is_nominal1 or is_nominal2 or (arg_token2 in arg1_ancestors_pre_verb) or (arg_token1 in arg2_ancestors_pre_verb):
+        if not apply_or_find:
+            non_verbal[subtype] = (non_verbal[subtype] + 1) if subtype in non_verbal else 1
         return
     
-    if (not verb1) or (not verb2):
-        if True:  # TODO - DEBUG
-            print("%d. Entity was tagged as VERB, continue to next.")
+    # check if verb was tagged as VERB accidentally
+    if check_verb_tagged_entity(verb1, arg1):
+        return
+    elif check_verb_tagged_entity(verb2, arg2):
         return
     
-    if subtype in verbal:
-        verbal[subtype] += 1
-    else:
-        verbal[subtype] = 1
-
-    set_of_verb_arcs, paths_verb_to_ancestor = find_verbal_path([verb1, verb2])
+    # its officially verbal, so count, manipulate paths and find verbal paths
+    path_pair = manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs)
+    paths_verb_to_ancestor = find_verbal_path([verb1, verb2])
     
-    # TODO - check order features (and any other boolean features)
-    # TODO - maybe add in the future: path3 or list_of arcs, and boolean list
-    path_pair = ("-".join(list_of_arg1_arcs), "-".join(list_of_arg2_arcs))
-    if path_pair in subtypes_by_rules:
-        if subtype in subtypes_by_rules[path_pair]:
-            subtypes_by_rules[path_pair][subtype] += 1
-        else:
-            subtypes_by_rules[path_pair][subtype] = 1
+    if apply_or_find:
+        check_rule(path_pair, verb1, verb2, arg_words, (arg1.id, arg2.id), relations)
     else:
-        subtypes_by_rules[path_pair] = {subtype: 1}
-    
-    if subtype in rules_by_subtype:
-        if path_pair in rules_by_subtype[subtype]:
-            rules_by_subtype[subtype][path_pair] += 1
-        else:
-            rules_by_subtype[subtype][path_pair] = 1
-    else:
-        rules_by_subtype[subtype] = {path_pair: 1}
-        
-    return set_of_verb_arcs
+        # update subtypes_by_rules and rules_by_subtype
+        update_dict_of_dicts(subtypes_by_rules, path_pair, subtype)
+        update_dict_of_dicts(rules_by_subtype, subtype, path_pair)
+        verbal[subtype] = (verbal[subtype] + 1) if subtype in verbal else 1
 
 
 def find_entities(in_sentence, entity_index, prev_entity_index, entities, sgm_path, sentence):
@@ -420,8 +373,8 @@ def break_sgm(path, nlp):
     return sentences
 
 
-def main_rule(subtype, nlp, sgm_path, entities, relations, apply_or_find, counters, tot_set_of_verb_arcs, subtypes_by_rules, rules_by_subtype, verbal, non_verbal):
-    global broken_entities_counter, broken_relations_counter
+def per_doc_rules(subtype, nlp, sgm_path, entities, relations, apply_or_find):
+    global broken_relations_counter
     
     # get sentences from sgm file
     sentences = break_sgm(sgm_path, nlp)
@@ -437,28 +390,22 @@ def main_rule(subtype, nlp, sgm_path, entities, relations, apply_or_find, counte
         in_sentence, entity_index, prev_entity_index = find_entities(
             in_sentence, entity_index, prev_entity_index, entities, sgm_path, sentence)
         
-        # for every pair of entities in sentence, that applies for SUBTYPE
+        # for every pair of entities in sentence, apply or find rules
         for arg1 in entities[prev_entity_index: entity_index]:
             for arg2 in entities[prev_entity_index: entity_index]:
-                if arg1.id == arg2.id:
-                    continue
                 pair = (arg1.id, arg2.id)
                 
-                if apply_or_find:
-                    apply_rules(sentence, pair, subtype, relations, counters)
-                else:
-                    if pair in relations:
-                        cur_set_of_verb_arcs = find_rules(sentence, arg1, arg2, relations[pair].rel_type, subtypes_by_rules, rules_by_subtype, verbal, non_verbal)
-                        if cur_set_of_verb_arcs:
-                            tot_set_of_verb_arcs |= cur_set_of_verb_arcs
-                        relations_found.add(pair)
-                    else:
-                        pass
-                        # TODO - do i want to save paths for comparison?
+                if (arg1.id == arg2.id) or                                                                  \
+                   (apply_or_find and (arg1.type + "-" + arg1.type) not in relation_arg_combos[subtype]) or \
+                   ((not apply_or_find) and (pair not in relations)):
+                        continue
+                
+                per_pair_rules(sentence, arg1, arg2, relations[pair].rel_type, relations, apply_or_find)
+                relations_found.add(pair)
         
         prev_entity_index = entity_index
     
-    if True:  # TODO - DEBUG
+    if DEBUG:
         for p in set(relations.keys()) - relations_found:
             broken_relations_counter += 1
             print("%d. Relation was broken by wrong sentence splitting:"
@@ -469,17 +416,9 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
     print("*****************************************************************************************************\n")
     import spacy
     nlp = spacy.load('en_core_web_sm')
-    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
-    tot_set_of_verb_arcs = set()
-    subtypes_by_rules = {}
-    rules_by_subtype = {}
-    verbal = {}
-    non_verbal = {}
     
-    for i, doc_triplet in enumerate(doc_triplets):
-        if i % 25 == 0:
-            print(i)
-        main_rule(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], apply_or_find, counters, tot_set_of_verb_arcs, subtypes_by_rules, rules_by_subtype, verbal, non_verbal)
+    for doc_triplet in doc_triplets:
+        per_doc_rules(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], apply_or_find)
     
     if apply_or_find:
         print("Recall: %.2f" % (counters[Counters.TP] / (counters[Counters.TP] + counters[Counters.FN])))
@@ -494,11 +433,13 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         print("\nUnique path pairs: %d" % len(subtypes_by_rules))
         print("\nRules by subtype:")
         for k, v in rules_by_subtype.items():
-            print("\t%s- Unique: %d" % (k, len(v)))
-        import pdb;pdb.set_trace()
+            print("\t%s: %d" % (k, len(v)))
         print("\nRules found (and their count):")
         for k, v in subtypes_by_rules.items():
             print("\t%s: %s" % (str(k), str(v)))
+
+
+################################################################################################
 
 
 def print_colored_relations(relations):
@@ -728,7 +669,7 @@ def main(path, cmd_subtype=None):
     # print (and execute) all missions
     print_type(meta_type, str(subtype))
     print_colored_relations(relations)
-    print_rules_statistics(subtype, doc_triplets, False) # TODO - apply_or_find
+    print_rules_statistics(subtype, doc_triplets, False)  # TODO - apply_or_find
     print_web_dependencies(relations)
     print("Run time: %.2f" % (time.time() - start))
 
