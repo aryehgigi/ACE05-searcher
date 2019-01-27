@@ -427,16 +427,25 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
         print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
     else:
+        print("Legit verb arcs: %s" % str(set_of_verb_arcs))
         print("Verbal-NonVerbal ratio:")
         for k, v in verbal.items():
             print("\t%s- %d:%d" % (k, v, non_verbal[k]))
         print("\nUnique path pairs: %d" % len(subtypes_by_rules))
+        
+        f = io.open(r"rules_by_subtype.dat", "w", encoding="utf-8")
         print("\nRules by subtype:")
         for k, v in rules_by_subtype.items():
             print("\t%s: %d" % (k, len(v)))
+            f.write("%s: %s\n" % (k, str(v)))
+        f.close()
+        
+        f = io.open(r"subtypes_by_rules.dat", "w", encoding="utf-8")
         print("\nRules found (and their count):")
         for k, v in subtypes_by_rules.items():
             print("\t%s: %s" % (str(k), str(v)))
+            f.write("%s: %s\n" % (str(k), str(v)))
+        f.close()
 
 
 ################################################################################################
