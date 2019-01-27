@@ -437,15 +437,24 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         print("\nRules by subtype:")
         for k, v in rules_by_subtype.items():
             print("\t%s: %d" % (k, len(v)))
-            f.write("%s: %s\n" % (k, str(v)))
+            sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            f.write("%s: %s\n" % (k, str(sorted_by_value)))
         f.close()
         
+        d = {}
         f = io.open(r"subtypes_by_rules.dat", "w", encoding="utf-8")
         print("\nRules found (and their count):")
         for k, v in subtypes_by_rules.items():
             print("\t%s: %s" % (str(k), str(v)))
-            f.write("%s: %s\n" % (str(k), str(v)))
+            sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            f.write("%s: %s\n" % (str(k), str(sorted_by_value)))
+            d[k] = sum(v.values())
         f.close()
+        
+        f = io.open(r"ordered_rules.dat", "w", encoding="utf-8")
+        sorted_by_value = sorted(d.items(), key=lambda kv: kv[1], reverse=True)
+        for (k, v) in sorted_by_value:
+            f.write("%s: %d\n" % (k, v))
 
 
 ################################################################################################
