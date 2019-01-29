@@ -24,7 +24,7 @@ verb_tagged_entities_counter = 0
 last_verb_tagged_entity = None
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
-Relation = namedtuple("Relation", "id rel_type data_type orig colored_text")
+Relation = namedtuple("Relation", "id rel_type arg1_type arg2_type data_type orig colored_text")
 Sentence = namedtuple("Sentence", "span start end")
 relation_types = {
     0: ('ART', ['User-Owner-Inventor-Manufacturer']),
@@ -54,6 +54,35 @@ relation_arg_combos = {
     'User-Owner-Inventor-Manufacturer': ['PER-WEA', 'PER-VEH', 'PER-FAC', 'ORG-WEA', 'ORG-VEH', 'ORG-FAC', 'GPE-WEA', 'GPE-VEH', 'GPE-FAC'],
     'Citizen-Resident-Religion-Ethnicity': ['PER-PER', 'PER-LOC', 'PER-GPE', 'PER-ORG'],
     'Org-Location': ['ORG-LOC', 'ORG-GPE']
+}
+relation_arg_combos_reversed = {
+    'ORG-FAC': ['User-Owner-Inventor-Manufacturer'],
+    'FAC-FAC': ['Geographical', 'Near'],
+    'LOC-GPE': ['Geographical', 'Near'],
+    'ORG-VEH': ['User-Owner-Inventor-Manufacturer'],
+    'GPE-WEA': ['User-Owner-Inventor-Manufacturer'],
+    'GPE-FAC': ['Geographical', 'User-Owner-Inventor-Manufacturer', 'Near'],
+    'PER-GPE': ['Employment', 'Investor-Shareholder', 'Near', 'Located', 'Citizen-Resident-Religion-Ethnicity', 'Founder'],
+    'GPE-LOC': ['Geographical', 'Near'],
+    'PER-VEH': ['User-Owner-Inventor-Manufacturer'],
+    'ORG-LOC': ['Org-Location'],
+    'ORG-WEA': ['User-Owner-Inventor-Manufacturer'],
+    'PER-WEA': ['User-Owner-Inventor-Manufacturer'],
+    'PER-FAC': ['User-Owner-Inventor-Manufacturer', 'Near', 'Located'],
+    'GPE-GPE': ['Geographical', 'Investor-Shareholder', 'Near'],
+    'FAC-GPE': ['Geographical', 'Near'],
+    'GPE-ORG': ['Investor-Shareholder', 'Membership'],
+    'LOC-LOC': ['Geographical', 'Near'],
+    'ORG-ORG': ['Subsidiary', 'Investor-Shareholder', 'Membership', 'Founder'],
+    'FAC-LOC': ['Geographical', 'Near'],
+    'VEH-VEH': ['Artifact'],
+    'PER-PER': ['Lasting-Personal', 'Citizen-Resident-Religion-Ethnicity', 'Business', 'Family'],
+    'PER-ORG': ['Employment', 'Ownership', 'Sports-Affiliation', 'Investor-Shareholder', 'Membership', 'Citizen-Resident-Religion-Ethnicity', 'Student-Alum', 'Founder'],
+    'ORG-GPE': ['Org-Location', 'Subsidiary', 'Investor-Shareholder', 'Founder'],
+    'PER-LOC': ['Near', 'Located', 'Citizen-Resident-Religion-Ethnicity'],
+    'WEA-WEA': ['Artifact'],
+    'GPE-VEH': ['User-Owner-Inventor-Manufacturer'],
+    'LOC-FAC': ['Geographical', 'Near']
 }
 # (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
 rule_paths = {
@@ -460,9 +489,10 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
 ################################################################################################
 
 
-def print_colored_relations(relations):
+def print_colored_relations(relations, arg_type_pair):
     for i, relation in enumerate(relations):
-        print(str(i + 1) + '(' + relation.data_type + '). ' + relation.colored_text)
+        if not arg_type_pair or relation.arg1_type + "-" + relation.arg2_type == arg_type_pair:
+            print(str(i + 1) + '(' + relation.data_type + ')/(' + relation.arg1_type + "-" + relation.arg2_type + '). ' + relation.colored_text)
     print("\n")
 
 
@@ -550,7 +580,7 @@ def extract_relations(path, relation_mention, entities, rel_type, data_type, rel
         if (arg1_id, arg2_id) in relations:
             print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
                   (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
-    relations[(arg1_id, arg2_id)] = Relation(relation_mention.attrib['ID'], rel_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
+    relations[(arg1_id, arg2_id)] = Relation(relation_mention.attrib['ID'], rel_type, arg1_type, arg2_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
 
 
 def extract_entities(entity_mention, entity, entities_by_id, ordered_entities):
@@ -658,7 +688,7 @@ def print_usage():
           "If you omit the subtype(or None), you will be prompt to input it afterwards.")
 
 
-def main(path, cmd_subtype=None):
+def main(path, cmd_subtype=None, arg_type_pair=None):
     import time
     start = time.time()
     
@@ -686,7 +716,7 @@ def main(path, cmd_subtype=None):
     
     # print (and execute) all missions
     print_type(meta_type, str(subtype))
-    print_colored_relations(relations)
+    print_colored_relations(relations, arg_type_pair)
     print_rules_statistics(subtype, doc_triplets, False)  # TODO - apply_or_find
     print_web_dependencies(relations)
     print("Run time: %.2f" % (time.time() - start))
@@ -700,5 +730,8 @@ if __name__ == "__main__":
     # 3 params means including subtype
     elif len(sys.argv) == 3:
         main(sys.argv[1], sys.argv[2])
+    # 4 params means including subtype and arg_type_pair
+    elif len(sys.argv) == 4:
+        main(sys.argv[1], sys.argv[2], sys.argv[3])
     else:
         print_usage()
