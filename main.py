@@ -501,7 +501,7 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         for element in g_doc_to_show:
             f.write(str(element) + "\n")
         f.close()
-        docs = [span for span, arg1_text, arg2_text, path_pair in g_doc_to_show]
+        docs = [nlp(sentence_text) for sentence_text, arg1_text, arg2_text, path_pair in g_doc_to_show]
         p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc - 1])
         p.start()
         import pdb;pdb.set_trace()
