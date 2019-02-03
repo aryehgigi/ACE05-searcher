@@ -114,12 +114,13 @@ class Counters(Enum):
 counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
 g_verbal_path = {}
 g_verbal_paths_types = {}
-set_of_verb_arcs = {}
+g_verb_arcs = {}
 subtypes_by_rules = {}
 rules_by_subtype = {}
 verbal = {}
 non_verbal = {}
 g_verbs_count = [0] * 30
+g_doc_to_show = []
 
 ################################################################################################
 
@@ -223,20 +224,21 @@ def check_rule(path_pair, verb1, verb2, arg_words, pair, relations):
 
 
 def find_verbal_path(verbs):
-    verbal_path = ''
+    verbal_path = [[], []]
     verbs_count = 0
+    verb_arcs = {}
     # find paths from verbs to common ancestor
     for i in range(len(verbs)):
         j = (i + 1) % 2
         w = verbs[i]
         while not (w.is_ancestor(verbs[j]) or (w == verbs[j])):
-            set_of_verb_arcs[w.dep_] = 1 if w.dep_ not in set_of_verb_arcs else set_of_verb_arcs[w.dep_] + 1
-            verbal_path += ('-' + w.dep_)
+            verb_arcs[w.dep_] = 1 if w.dep_ not in verb_arcs else verb_arcs[w.dep_] + 1
+            verbal_path[i] += [w.dep_]
             w = w.head
             verbs_count += 1
         verbal_path += ' | ' if i < j else ''
     
-    return verbal_path, verbs_count
+    return ("-".join(verbal_path[0]), "-".join(verbal_path[1])), verbs_count, verb_arcs
 
 
 def manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs, apply_manipulation=False):
@@ -250,6 +252,27 @@ def manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs, apply_manipulation=Fa
         if len(arg2_arcs) > 0 and arg2_arcs[-1] == '-':
             arg2_arcs = arg2_arcs[:-1]
     return arg1_arcs, arg2_arcs
+
+
+def find_path_to_arg(arg_token, verb):
+    list_of_arg_arcs = []
+    w = verb
+    out_verb = verb
+    
+    while w != arg_token:
+        # start over if new erb found (as we looked at the verbal path so far)
+        if w.pos_ == "VERB" and w != verb:
+            list_of_arg_arcs = []
+            out_verb = w
+        
+        # store interesting dependencies
+        if w.dep_ != "conj" and w.dep_ != "compound":
+            list_of_arg_arcs.append(w.dep_)
+        
+        # move counters
+        w = w.head
+    
+    return out_verb, [i for i in reversed(list_of_arg_arcs)]
 
 
 def find_path_to_verb(arg_token):
@@ -302,14 +325,18 @@ def check_verb_tagged_entity(verb, arg):
     return False
 
 
-# TODO - check order features (and any other boolean features)
-# TODO - maybe add in the future: path3 or list_of arcs, and boolean list
 def per_pair_rules(sentence, arg1, arg2, subtype, relations, apply_or_find):
-    global subtypes_by_rules, rules_by_subtype, verbal, non_verbal, last_verb_tagged_entity, verb_tagged_entities_counter
+    global subtypes_by_rules, rules_by_subtype, verbal, non_verbal, last_verb_tagged_entity, verb_tagged_entities_counter, g_doc_to_show
+    
     arg_token1 = find_arg_token(sentence, arg1)
     arg_token2 = find_arg_token(sentence, arg2)
     is_nominal1, verb1, list_of_arg1_arcs, arg1_ancestors_pre_verb = find_path_to_verb(arg_token1)
     is_nominal2, verb2, list_of_arg2_arcs, arg2_ancestors_pre_verb = find_path_to_verb(arg_token2)
+    
+    if verb2 and arg_token1.is_ancestor(verb2):
+        verb1, list_of_arg1_arcs = find_path_to_arg(arg_token1, verb2)
+    if verb1 and arg_token2.is_ancestor(verb1):
+        verb2, list_of_arg2_arcs = find_path_to_arg(arg_token2, verb1)
     
     # if nominal, or one is ancestor of the other (no verb between them) count as non-verbal and return
     if is_nominal1 or is_nominal2 or (arg_token2 in arg1_ancestors_pre_verb) or (arg_token1 in arg2_ancestors_pre_verb):
@@ -325,15 +352,20 @@ def per_pair_rules(sentence, arg1, arg2, subtype, relations, apply_or_find):
     
     # its officially verbal, so count, manipulate paths and find verbal paths
     path_pair = manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs)
-    verbal_path, verbs_count = find_verbal_path([verb1, verb2])
+    verbal_path, verbs_count, verb_arcs = find_verbal_path([verb1, verb2])
     
     if apply_or_find:
         check_rule(path_pair, verb1, verb2, arg_words, (arg1.id, arg2.id), relations)
     else:
         # update subtypes_by_rules and rules_by_subtype
+        if subtype != 'NO_RELATION':
+            if verbal_path not in g_verbal_path or \
+                    (len(g_verbal_path[verbal_path]) == 1) and ("NO_RELATION" in g_verbal_path[verbal_path]):
+                g_doc_to_show += [(sentence.span.text, arg_token1, arg_token2, verbal_path)]
+            g_verbs_count[verbs_count] += 1
+            for k, v in verb_arcs.items():
+                g_verb_arcs[k] = v + (g_verb_arcs[k] if k in g_verb_arcs else 0)
         update_dict_of_dicts(g_verbal_path, verbal_path, subtype)
-        g_verbs_count[verbs_count] += 1 if subtype != 'NO_RELATION' else 0
-        
         update_dict_of_dicts(subtypes_by_rules, path_pair, subtype)
         update_dict_of_dicts(rules_by_subtype, subtype, path_pair)
         verbal[subtype] = (verbal[subtype] + 1) if subtype in verbal else 1
@@ -462,16 +494,27 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
         print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
     else:
-        print("Legit verb arcs: %s" % str(set_of_verb_arcs))
+        print("Legit verb arcs: %s" % str(g_verb_arcs))
         print("Verbs-count to times-seen: %s" % str({i + 1: count for i, count in enumerate(g_verbs_count)}))
         
+        f = io.open(r"path examples.dat", "w", encoding="utf-8")
+        for element in g_doc_to_show:
+            f.write(str(element) + "\n")
+        f.close()
+        docs = [span for span, arg1_text, arg2_text, path_pair in g_doc_to_show]
+        p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc - 1])
+        p.start()
+        import pdb;pdb.set_trace()
+        p.terminate()
+        
         f = io.open(r"verbal_paths.dat", "w", encoding="utf-8")
-        f.write("Verbal paths:(count seen in all relations):(path) (count-seen-per-relation-type)\n")
-        print("\nVerbal paths:(count seen in all relations):(path) (count-seen-per-relation-type)")
+        f.write("Verbal paths count seen in all relations: path count-seen-per-relation-type\n")
+        print("\nVerbal paths count seen in all relations: path count-seen-per-relation-type")
         sorted_by_value = sorted(g_verbal_path.items(), key=lambda kv: sum([val for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
         for k, v in sorted_by_value:
-            print("\t%d: %s %s" % (sum([v2 for k2, v2 in v.items() if k2 != "NO_RELATION"]), str(k), str(v)))
-            f.write("%d:%s %s\n" % (sum([v2 for k2, v2 in v.items() if k2 != "NO_RELATION"]), str(k), str(v)))
+            v_sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            print("\t%d:\t%s %s" % (sum([v2 for k2, v2 in v.items() if k2 != "NO_RELATION"]), str(k), str(v_sorted_by_value)))
+            f.write("%d:\n\t%s\n\t%s\n" % (sum([v2 for k2, v2 in v.items() if k2 != "NO_RELATION"]), str(k), str(v_sorted_by_value)))
         f.close()
         
         print("Verbal-NonVerbal ratio:")
@@ -490,11 +533,14 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         d = {}
         f = io.open(r"subtypes_by_rules.dat", "w", encoding="utf-8")
         print("\nRules found (and their count):")
-        for k, v in subtypes_by_rules.items():
-            print("\t%s: %s" % (str(k), str(v)))
-            sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
-            f.write("%s: %s\n" % (str(k), str(sorted_by_value)))
-            d[k] = sum(v.values())
+        sorted_by_value = sorted(subtypes_by_rules.items(), key=lambda kv: sum([val for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
+        for k, v in sorted_by_value:
+            if len(v) == 1 and "NO_RELATION" in v:
+                continue
+            v_sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            print("\t%s: %s" % (str(k), str(v_sorted_by_value)))
+            f.write("%s: %s\n" % (str(k), str(v_sorted_by_value)))
+            d[k] = sum(v.values()) - (v["NO_RELATION"] if "NO_RELATION" in v else 0)
         f.close()
         
         f = io.open(r"ordered_rules.dat", "w", encoding="utf-8")
