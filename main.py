@@ -24,7 +24,7 @@ verb_tagged_entities_counter = 0
 last_verb_tagged_entity = None
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
-Relation = namedtuple("Relation", "id rel_type arg1_type arg2_type data_type orig colored_text")
+Relation = namedtuple("Relation", "id rel_type arg1_type arg2_type data_type orig colored_text bold_text")
 Sentence = namedtuple("Sentence", "span start end")
 relation_types = {
     0: ('ART', ['User-Owner-Inventor-Manufacturer']),
@@ -113,6 +113,7 @@ class Counters(Enum):
 
 counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
 g_verbal_path = {}
+g_verbal_triggers = {}
 g_verbal_paths_types = {}
 g_verb_arcs = {}
 subtypes_by_rules = {}
@@ -189,11 +190,12 @@ def print_web_dependencies(relations):
 ################################################################################################
 
 
-def update_dict_of_dicts(d, i, j, add=1):
+def update_dict_of_dicts(d, i, j, add=None):
+    final_add = add if add else 1
     if i in d:
-        d[i][j] = (d[i][j] + add) if j in d[i] else 1
+        d[i][j] = (d[i][j] + final_add) if j in d[i] else final_add
     else:
-        d[i] = {j: 1}
+        d[i] = {j: final_add}
 
 
 def check_rule(path_pair, verb1, verb2, arg_words, pair, relations):
@@ -223,20 +225,28 @@ def check_rule(path_pair, verb1, verb2, arg_words, pair, relations):
             counters[Counters.FPO] += 1
 
 
-def find_verbal_path(verbs):
+def find_verbal_path(verbs, subtype):
+    global g_verbal_triggers
+    
     verbal_path = [[], []]
     verbs_count = 0
     verb_arcs = {}
+    
     # find paths from verbs to common ancestor
+    w = ""
     for i in range(len(verbs)):
         j = (i + 1) % 2
         w = verbs[i]
         while not (w.is_ancestor(verbs[j]) or (w == verbs[j])):
             verb_arcs[w.dep_] = 1 if w.dep_ not in verb_arcs else verb_arcs[w.dep_] + 1
             verbal_path[i] += [w.dep_]
+            if w.pos_ == "VERB":
+                update_dict_of_dicts(g_verbal_triggers, subtype, w.lemma_)
             w = w.head
             verbs_count += 1
-        verbal_path += ' | ' if i < j else ''
+    
+    # add the most common ancestor (which wasn't added so far)
+    update_dict_of_dicts(g_verbal_triggers, subtype, w.lemma_)
     
     return ("-".join(verbal_path[0]), "-".join(verbal_path[1])), verbs_count, verb_arcs
 
@@ -352,20 +362,22 @@ def per_pair_rules(sentence, arg1, arg2, subtype, relations, apply_or_find):
     
     # its officially verbal, so count, manipulate paths and find verbal paths
     path_pair = manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs)
-    verbal_path, verbs_count, verb_arcs = find_verbal_path([verb1, verb2])
-    
+    if u"it is the equipment of choice" in sentence.span.text.replace("\n", " ") and \
+            subtype == "Located": \
+        import pdb;pdb.set_trace()
+    verbal_path, verbs_count, verb_arcs = find_verbal_path([verb1, verb2], subtype)
     if apply_or_find:
         check_rule(path_pair, verb1, verb2, arg_words, (arg1.id, arg2.id), relations)
     else:
         # update subtypes_by_rules and rules_by_subtype
         if subtype != 'NO_RELATION':
-            if verbal_path not in g_verbal_path or \
-                    (len(g_verbal_path[verbal_path]) == 1) and ("NO_RELATION" in g_verbal_path[verbal_path]):
-                g_doc_to_show += [(sentence.span.text, arg_token1, arg_token2, verbal_path)]
+            # if verbal_path not in g_verbal_path or \
+            #         (len(g_verbal_path[verbal_path]) == 1) and ("NO_RELATION" in g_verbal_path[verbal_path]):
+            #     g_doc_to_show += [(sentence.span.text, arg_token1, arg_token2, verbal_path)]
             g_verbs_count[verbs_count] += 1
             for k, v in verb_arcs.items():
                 g_verb_arcs[k] = v + (g_verb_arcs[k] if k in g_verb_arcs else 0)
-        update_dict_of_dicts(g_verbal_path, verbal_path, subtype)
+        update_dict_of_dicts(g_verbal_path, verbal_path, subtype, add=[(sentence.span.text, relations[(arg1.id, arg2.id)].bold_text if (arg1.id, arg2.id) in relations else sentence.span.text)])
         update_dict_of_dicts(subtypes_by_rules, path_pair, subtype)
         update_dict_of_dicts(rules_by_subtype, subtype, path_pair)
         verbal[subtype] = (verbal[subtype] + 1) if subtype in verbal else 1
@@ -494,52 +506,63 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
         print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
     else:
+        f = io.open(r"verbal_triggers.dat", "w", encoding="utf-8")
+        for k, v in g_verbal_triggers.items():
+            f.write("%s\t" % k)
+            for i, (k2, v2) in enumerate(v.items()):
+                if (i + 1) == len(v):
+                    f.write("%s %d" % (k2, v2))
+                else:
+                    f.write("%s %d\t" % (k2, v2))
+            f.write("\n")
+        f.close()
+        
         print("Legit verb arcs: %s" % str(g_verb_arcs))
         print("Verbs-count to times-seen: %s" % str({i + 1: count for i, count in enumerate(g_verbs_count)}))
-        
-        f = io.open(r"path examples.dat", "w", encoding="utf-8")
-        for element in g_doc_to_show:
-            f.write(str(element) + "\n")
-        f.close()
-        docs = [nlp(sentence_text) for sentence_text, arg1_text, arg2_text, path_pair in g_doc_to_show]
-        p = multiprocessing.Process(target=threaded_displacy, args=[docs, port_inc - 1])
-        p.start()
-        import pdb;pdb.set_trace()
-        p.terminate()
-        
-        f = io.open(r"verbal_paths.dat", "w", encoding="utf-8")
-        f.write("Verbal paths count seen in all relations: path count-seen-per-relation-type\n")
-        print("\nVerbal paths count seen in all relations: path count-seen-per-relation-type")
-        sorted_by_value = sorted(g_verbal_path.items(), key=lambda kv: sum([val for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
-        for k, v in sorted_by_value:
-            v_sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
-            print("\t%d:\t%s %s" % (sum([v2 for k2, v2 in v.items() if k2 != "NO_RELATION"]), str(k), str(v_sorted_by_value)))
-            f.write("%d:\n\t%s\n\t%s\n" % (sum([v2 for k2, v2 in v.items() if k2 != "NO_RELATION"]), str(k), str(v_sorted_by_value)))
-        f.close()
-        
         print("Verbal-NonVerbal ratio:")
         for k, v in verbal.items():
             print("\t%s- %d:%d" % (k, v, non_verbal[k]))
         print("\nUnique path pairs: %d" % len(subtypes_by_rules))
         
+        f = io.open(r"verbal_paths.dat", "w", encoding="utf-8")
+        sorted_by_value = sorted(g_verbal_path.items(), key=lambda kv: sum([len(val) for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
+        for k, v in sorted_by_value:
+            v_sorted_by_value = sorted(v.items(), key=lambda kv: len(kv[1]), reverse=True)
+            f.write("PathPair=%s~%s\t%d\t%d\n" % (str(k[0]), str(k[1]), sum([len(v2) for k2, v2 in v.items() if k2 != "NO_RELATION"]), len(v_sorted_by_value[0][1])))
+            for v_subtype, v_example_list in v_sorted_by_value:
+                f.write("Subtype=%s\n" % v_subtype)
+                for (orig, bold) in v_example_list:
+                    f.write("OrigSentence=%s\n" % orig)
+                    f.write("BoldSentence=%s\n" % bold)
+            f.write("\n")
+        f.close()
+        
         f = io.open(r"rules_by_subtype.dat", "w", encoding="utf-8")
-        print("\nRules by subtype:")
         for k, v in rules_by_subtype.items():
-            print("\t%s: %d" % (k, len(v)))
             sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
-            f.write("%s: %s\n" % (k, str(sorted_by_value)))
+            f.write("%s\t" % str(k))
+            for i, (k2, v2) in enumerate(sorted_by_value):
+                if (i + 1) == len(v):
+                    f.write("%s:%d" % (k2, v2))
+                else:
+                    f.write("%s:%d\t" % (k2, v2))
+            f.write("\n")
         f.close()
         
         d = {}
         f = io.open(r"subtypes_by_rules.dat", "w", encoding="utf-8")
-        print("\nRules found (and their count):")
         sorted_by_value = sorted(subtypes_by_rules.items(), key=lambda kv: sum([val for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
         for k, v in sorted_by_value:
             if len(v) == 1 and "NO_RELATION" in v:
                 continue
             v_sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
-            print("\t%s: %s" % (str(k), str(v_sorted_by_value)))
-            f.write("%s: %s\n" % (str(k), str(v_sorted_by_value)))
+            f.write("%s\t" % str(k))
+            for i, (k2, v2) in enumerate(v_sorted_by_value):
+                if (i + 1) == len(v):
+                    f.write("%s:%d" % (k2, v2))
+                else:
+                    f.write("%s:%d\t" % (k2, v2))
+            f.write("\n")
             d[k] = sum(v.values()) - (v["NO_RELATION"] if "NO_RELATION" in v else 0)
         f.close()
         
@@ -621,10 +644,10 @@ def extract_relations(path, relation_mention, entities, rel_type, data_type, rel
             arg2_id = sub_rel_mention.attrib['REFID']
     
     # assign indices and colores according to argument order
-    first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color =   \
-        (head_start, head_start2, head_end, head_end2, "\033[1;32;0m", "\033[1;31;0m")              \
-        if head_start < head_start2 else                                                            \
-        (head_start2, head_start, head_end2, head_end, "\033[1;31;0m", "\033[1;32;0m")
+    first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color, first_color_jup, second_color_jup =                \
+        (head_start, head_start2, head_end, head_end2, "\033[1;32;0m", "\033[1;31;0m", "**<span style='color:green'>", "**<span style='color:red'>")\
+        if head_start < head_start2 else                                                                                                            \
+        (head_start2, head_start, head_end2, head_end, "\033[1;31;0m", "\033[1;32;0m", "**<span style='color:red'>", "**<span style='color:green'>")
     
     # assemble the original extent text with the colored arguments
     colored_text =                                                                \
@@ -638,12 +661,23 @@ def extract_relations(path, relation_mention, entities, rel_type, data_type, rel
         "\033[0m" +                                                               \
         original_sentence[last_head_end - start + 1:]
     
+    bold_text =                                                                 \
+        original_sentence[:first_head_start - start] +                            \
+        first_color_jup +                                                         \
+        original_sentence[first_head_start - start: first_head_end - start + 1] + \
+        "</span>**" +                                                             \
+        original_sentence[first_head_end - start + 1: last_head_start - start] +  \
+        second_color_jup +                                                        \
+        original_sentence[last_head_start - start: last_head_end - start + 1] +   \
+        "</span>**" +                                                             \
+        original_sentence[last_head_end - start + 1:]
+    
     if DEBUG:
         # notify user in case both arguments already participated in a former relation
         if (arg1_id, arg2_id) in relations:
             print("Notification: bad duplicate found,\n\tPath: %s\n\tSentence: %s,\n\tRe1Types: %s vs %s,\n\tArgTypes: %s -> %s, (%s, %s)\n" %
                   (path, relations[(arg1_id, arg2_id)].colored_text, relations[(arg1_id, arg2_id)].rel_type, rel_type, arg1_type, arg2_type, arg1_id, arg2_id))
-    relations[(arg1_id, arg2_id)] = Relation(relation_mention.attrib['ID'], rel_type, arg1_type, arg2_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '))
+    relations[(arg1_id, arg2_id)] = Relation(relation_mention.attrib['ID'], rel_type, arg1_type, arg2_type, data_type, original_sentence.replace('\n', ' '), colored_text.replace('\n', ' '), bold_text.replace('\n', ' '))
 
 
 def extract_entities(entity_mention, entity, entities_by_id, ordered_entities):
