@@ -15,14 +15,18 @@ from collections import namedtuple
 from pathlib import Path
 import multiprocessing
 import xml.etree.ElementTree as ET
-import pickle as pkl
-import json
-import spacy
+import conllu_stuff
 
+DEBUG = False
+port_inc = 5000
+broken_entities_counter = 0
+broken_relations_counter = 0
+verb_tagged_entities_counter = 0
+last_verb_tagged_entity = None
 data_types = ['bc', 'bn', 'wl', 'un', 'nw', 'cts']
 Entity = namedtuple("Entity", "id type start end head extent")
 Relation = namedtuple("Relation", "id rel_type arg1_type arg2_type data_type orig colored_text bold_text")
-Sentence = namedtuple("Sentence", "span start end")
+Sentence = namedtuple("Sentence", "span start end conllu_dict")
 relation_types = {
     0: ('ART', ['User-Owner-Inventor-Manufacturer']),
     1: ('GEN-AFF', ['Citizen-Resident-Religion-Ethnicity', 'Org-Location']),
@@ -81,12 +85,34 @@ relation_arg_combos_reversed = {
     'GPE-VEH': ['User-Owner-Inventor-Manufacturer'],
     'LOC-FAC': ['Geographical', 'Near']
 }
+# (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
+rule_paths = {
+    ("nsubj",       "pobj-prep"):       (False, True, True, True),
+    ("nsubjpass",   "pobj-prep"):       (False, True, True, True),
+    ("nsubj",       "dobj"):            (False, True, True, True),
+    ("nsubj",       "advmod"):          (False, True, True, True),
+    ("dobj",        "dobj"):            (False, False, True, False),
+    ("poss-attr",   "pobj-prep"):       (False, False, True, True),
+    ("pobj",        "nsubj"):           (True, False, False, False),
+    ("nsubj",       "nsubj"):           (False, False, False, False),
+    ("nsubj",       "poss-prep-nsubj"): (False, False, False, False),
+    ("dobj",        "nsubjpass"):       (False, True, False, False),
+    ("dobj",        "nsubj"):            (False, False, False, False)
+}
+valid_verb_connectors = ["xcomp", "ccomp", "conj", "dep", "advcl", "relcl", ""]
+valid_verb_binary_connectors = ["pcomp-prep"]
 
-DEBUG = False
-g_broken_entities_counter = 0
-g_broken_relations_counter = 0
-g_verb_tagged_entities_counter = 0
-g_last_verb_tagged_entity = None
+
+class Counters(Enum):
+    TP = 0,
+    FN = 1,
+    FPN = 2,
+    FPO = 3,
+    TNO = 4,
+    TNN = 5
+
+
+counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
 g_verbal_path = {}
 g_verbal_triggers = {}
 g_verbal_paths_types = {}
@@ -99,8 +125,7 @@ non_verbal = {}
 g_verbs_count = [0] * 30
 g_doc_to_show = []
 
-
-######################################## Legacy functions ########################################################
+################################################################################################
 
 
 def print_mod(cur, count=0):
@@ -127,7 +152,7 @@ def threaded_displacy(docs, port):
 
 
 def print_web_dependency(nlp, relations):
-    port_inc = 5000
+    global port_inc
     
     # get user line numbers input
     lines = input("Choose line numbers (space separated), for comparision.\n")
@@ -164,82 +189,29 @@ def print_web_dependencies(relations):
     _ = [process.terminate for process in processes]
 
 
-def print_colored_relations(relations, arg_type_pair):
-    for i, relation in enumerate(relations):
-        if not arg_type_pair or relation.arg1_type + "-" + relation.arg2_type == arg_type_pair:
-            print(str(i + 1) + '(' + relation.data_type + ')/(' + relation.arg1_type + "-" + relation.arg2_type + '). ' + relation.colored_text)
-    print("\n")
+################################################################################################
 
 
-def print_type(cur_type, subtype):
-    print("*****************************************************************************************************\n")
-    print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
-    print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
-    print()
-
-
-def extract_metonymy(relation, entities, data_type, path):
-    global output_counter
-    head_start = 0
-    head_start2 = 0
-    head_end = 0
-    head_end2 = 0
-
-    output_counter += 1
-
-    for cur_child in relation:
-        if cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-1':
-            head_start, head_end = entities[cur_child.attrib['REFID']]
-        elif cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-2':
-            head_start2, head_end2 = entities[cur_child.attrib['REFID']]
-
-    sgm = open(path.replace('apf.xml', 'sgm')).read()
-    sgm = re.sub('<.*?>', '', sgm)
-    first = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start): head_start],
-                                                      sgm[head_start: head_end + 1],
-                                                      sgm[head_end + 1: sgm.find('\n', head_end, len(sgm))])
-    second = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start2): head_start2],
-                                                       sgm[head_start2: head_end2 + 1],
-                                                       sgm[head_end2 + 1: sgm.find('\n', head_end2, len(sgm))])
-
-    print(str(output_counter) + '(' + data_type + '). ' + "..." + first.replace('\n', '') + "..." + " <--> " + "..." + second.replace('\n', '') + "...")
-    return
+def update_dict_of_dicts(d, i, j, add=None):
+    final_add = add if add else 1
+    if i in d:
+        d[i][j] = (d[i][j] + final_add) if j in d[i] else final_add
+    else:
+        d[i] = {j: final_add}
 
 
 def check_rule(path_pair, verb1, verb2, arg_words, pair, relations):
-    class Counters(Enum):
-        TP = 0,
-        FN = 1,
-        FPN = 2,
-        FPO = 3,
-        TNO = 4,
-        TNN = 5
-    
-    counters = {Counters.TP: 0, Counters.FN: 0, Counters.TNN: 0, Counters.TNO: 0, Counters.FPN: 0, Counters.FPO: 0}
-    
-    # (list_arg1, list_arg2): (same_verb, arg1_from_left, arg2_from_right, arg1_before_arg2)
-    rule_paths = {
-        ("nsubj",       "pobj-prep"):       (False, True, True, True),
-        ("nsubjpass",   "pobj-prep"):       (False, True, True, True),
-        ("nsubj",       "dobj"):            (False, True, True, True),
-        ("nsubj",       "advmod"):          (False, True, True, True),
-        ("dobj",        "dobj"):            (False, False, True, False),
-        ("poss-attr",   "pobj-prep"):       (False, False, True, True),
-        ("pobj",        "nsubj"):           (True, False, False, False),
-        ("nsubj",       "nsubj"):           (False, False, False, False),
-        ("nsubj",       "poss-prep-nsubj"): (False, False, False, False),
-        ("dobj",        "nsubjpass"):       (False, True, False, False),
-        ("dobj",        "nsubj"):            (False, False, False, False)
-    }
+    global counters
 
+    # TODO - debug this function
     should_be_same_verb, should_arg1_from_left, should_arg2_from_right, should_arg1_before_arg2 = \
         rule_paths[path_pair]
     
-    if path_pair not in rule_paths or \
-            (should_be_same_verb and (verb1 != verb2)) or \
-            (should_arg1_from_left ^ (arg_words[0].idx < verb1.idx)) or \
-            (should_arg2_from_right ^ (verb2.idx < arg_words[1].idx)) or \
-            (should_arg1_before_arg2 ^ (arg_words[0].idx < arg_words[1].idx)):
+    if path_pair not in rule_paths or                               \
+       (should_be_same_verb and (verb1 != verb2)) or                \
+       (should_arg1_from_left ^ (arg_words[0].idx < verb1.idx)) or  \
+       (should_arg2_from_right ^ (verb2.idx < arg_words[1].idx)) or \
+       (should_arg1_before_arg2 ^ (arg_words[0].idx < arg_words[1].idx)):
         if pair not in relations:
             counters[Counters.TNN] += 1
         elif relations[pair].rel_type == subtype:
@@ -253,19 +225,6 @@ def check_rule(path_pair, verb1, verb2, arg_words, pair, relations):
             counters[Counters.TP] += 1
         else:
             counters[Counters.FPO] += 1
-    
-    return counters
-
-
-################################################################################################
-
-
-def update_dict_of_dicts(d, i, j, add=None):
-    final_add = add if add else 1
-    if i in d:
-        d[i][j] = (d[i][j] + final_add) if j in d[i] else final_add
-    else:
-        d[i] = {j: final_add}
 
 
 def find_verbal_path(verbs, subtype):
@@ -297,9 +256,9 @@ def find_verbal_path(verbs, subtype):
 def manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs, apply_manipulation=False):
     arg1_arcs = "-".join(list_of_arg1_arcs)
     arg2_arcs = "-".join(list_of_arg2_arcs)
-    if apply_manipulation:
-        arg1_arcs = re.sub("nmod(-nmod)+", "(nmod)*", arg1_arcs)
-        arg2_arcs = re.sub("nmod(-nmod)+", "(nmod)*", arg2_arcs)
+    # if apply_manipulation:
+    #     arg1_arcs = re.sub("pobj-prep(-pobj-prep)+", "(pobj-prep)*", arg1_arcs)
+    #     arg2_arcs = re.sub("pobj-prep(-pobj-prep)+", "(pobj-prep)*", arg2_arcs)
     return arg1_arcs, arg2_arcs
 
 
@@ -315,8 +274,8 @@ def find_path_to_arg(arg_token, verb):
             out_verb = w
         
         # store interesting dependencies
-        #if w.dep_ != "conj" and w.dep_ != "compound":
-        list_of_arg_arcs.append(w.dep_)
+        if w.dep_ != "conj" and w.dep_ != "compound":
+            list_of_arg_arcs.append(w.dep_)
         
         # move counters
         w = w.head
@@ -327,104 +286,93 @@ def find_path_to_arg(arg_token, verb):
 def find_path_to_verb(arg_token):
     list_of_arg_arcs = []
     arg_ancestors_pre_verb = []
-    w = arg_token
+    ww = arg_token
     verb = None
     
-    while (w.pos_ != "VERB") and (w.dep_ != "ROOT"):
+    while ww.pos_ != "VERB" and ww.head_ != 0:
         # store interesting dependencies
-        #if w.dep_ != "conj" and w.dep_ != "compound":
-        list_of_arg_arcs.append(w.dep_)
+        if ww.dep_ != "conj" and ww.dep_ != "compound":
+            list_of_arg_arcs.append(ww.dep_)
         
         # store tokens that are arg ancestors, prior reaching the verb
+        arg_ancestors_pre_verb.append(ww)
         
         # move counters
-        w = w.head
-        arg_ancestors_pre_verb.append(w)
-        if w.pos_ == "VERB":
-            verb = w
-            
-    return verb is None, verb, list_of_arg_arcs, arg_ancestors_pre_verb
+        ww = ww.head
+        verb = ww
+        
+        # check if it is a Nominal sentence
+        try:
+            if (ww.head_ == 0) and (ww.pos_ != "VERB"):
+                return True, None, None, None
+        except:
+            import pdb;pdb.set_trace()
+    
+    return False, verb, list_of_arg_arcs, arg_ancestors_pre_verb
 
 
 def find_arg_token(sentence, argx):
     arg_token = None
-    for word in sentence.span:
-        word_start = word.idx - sentence.span.start_char + sentence.start
+    last_pos = -1
+    last_word = None
+    for word in sentence.conllu_dict.values():
+        last_pos = sentence.span.text.find(word.text, (last_pos + len(last_word)) if last_word else 0)
+        if -1 == last_pos:
+            import pdb;pdb.set_trace()
+        word_start = last_pos + sentence.start
         word_end = word_start + len(word.text) - 1
         if argx.start <= word_start <= argx.end or \
            argx.start <= word_end <= argx.end or \
            word_start <= argx.start <= word_end:
                 if (not arg_token) or word.is_ancestor(arg_token):
                     arg_token = word
+        last_word = word.text
+    
+    if not arg_token:
+        import pdb;pdb.set_trace()
     return arg_token
 
 
 def check_verb_tagged_entity(verb, arg):
-    global g_last_verb_tagged_entity, g_verb_tagged_entities_counter
+    global last_verb_tagged_entity, verb_tagged_entities_counter
     if not verb:
-        if g_last_verb_tagged_entity != arg:
-            g_last_verb_tagged_entity = arg
+        if last_verb_tagged_entity != arg:
+            last_verb_tagged_entity = arg
             if DEBUG:
-                g_verb_tagged_entities_counter += 1
-                print("%d. Entity was tagged as VERB, EntityInfo: %s " % (g_verb_tagged_entities_counter, g_last_verb_tagged_entity))
+                verb_tagged_entities_counter += 1
+                print("%d. Entity was tagged as VERB, EntityInfo: %s " % (verb_tagged_entities_counter, last_verb_tagged_entity))
         return True
     return False
 
 
-def per_pair_rules(sentence, sent_id, arg1, arg2, subtype, relations, apply_or_find, find_non_verbal_path=True):
-    global subtypes_by_rules_examples, subtypes_by_rules, rules_by_subtype, verbal, non_verbal, g_doc_to_show
+def per_pair_rules(sentence, arg1, arg2, subtype, relations, apply_or_find):
+    global subtypes_by_rules_examples, subtypes_by_rules, rules_by_subtype, verbal, non_verbal, last_verb_tagged_entity, verb_tagged_entities_counter, g_doc_to_show
     
     arg_token1 = find_arg_token(sentence, arg1)
     arg_token2 = find_arg_token(sentence, arg2)
     is_nominal1, verb1, list_of_arg1_arcs, arg1_ancestors_pre_verb = find_path_to_verb(arg_token1)
     is_nominal2, verb2, list_of_arg2_arcs, arg2_ancestors_pre_verb = find_path_to_verb(arg_token2)
     
-    if not find_non_verbal_path:
-        if verb2 and arg_token1.is_ancestor(verb2):
-            verb1, list_of_arg1_arcs = find_path_to_arg(arg_token1, verb2)
-        if verb1 and arg_token2.is_ancestor(verb1):
-            verb2, list_of_arg2_arcs = find_path_to_arg(arg_token2, verb1)
+    if verb2 and arg_token1.is_ancestor(verb2):
+        verb1, list_of_arg1_arcs = find_path_to_arg(arg_token1, verb2)
+    if verb1 and arg_token2.is_ancestor(verb1):
+        verb2, list_of_arg2_arcs = find_path_to_arg(arg_token2, verb1)
     
-        # if nominal, or one is ancestor of the other (no verb between them) count as non-verbal and return
-        if is_nominal1 or is_nominal2 or (arg_token2 in arg1_ancestors_pre_verb) or (arg_token1 in arg2_ancestors_pre_verb):
-            if not apply_or_find:
-                non_verbal[subtype] = (non_verbal[subtype] + 1) if subtype in non_verbal else 1
-            return
+    # if nominal, or one is ancestor of the other (no verb between them) count as non-verbal and return
+    if is_nominal1 or is_nominal2 or (arg_token2 in arg1_ancestors_pre_verb) or (arg_token1 in arg2_ancestors_pre_verb):
+        if not apply_or_find:
+            non_verbal[subtype] = (non_verbal[subtype] + 1) if subtype in non_verbal else 1
+        return
     
-        # check if verb was tagged as VERB accidentally
-        if check_verb_tagged_entity(verb1, arg1):
-            return
-        elif check_verb_tagged_entity(verb2, arg2):
-            return
-    else:
-        found = False
-        for arg in [arg_token1] + arg1_ancestors_pre_verb:
-            if arg.is_ancestor(arg_token2) or arg == arg_token2:
-                list_of_arg1_arcs = list_of_arg1_arcs[: (arg1_ancestors_pre_verb.index(arg) + 1) if arg in arg1_ancestors_pre_verb else 0]
-                list_of_arg2_arcs = list_of_arg2_arcs[: (arg2_ancestors_pre_verb.index(arg) + 1) if arg in arg2_ancestors_pre_verb else 0]
-                found = True
-                break
-        
-        if (not found) or (arg == verb1) or (arg == verb2) or ((not list_of_arg1_arcs) and (not list_of_arg2_arcs)):
-            return
-        
-        # if arg_token1.is_ancestor(arg_token2):
-        #     if arg_token1 not in arg2_ancestors_pre_verb:
-        #         return
-        #     list_of_arg1_arcs = []
-        #     list_of_arg2_arcs = list_of_arg2_arcs[: arg2_ancestors_pre_verb.index(arg_token1) + 1]
-        # elif arg_token2.is_ancestor(arg_token1):
-        #     if arg_token2 not in arg1_ancestors_pre_verb:
-        #         return
-        #     list_of_arg2_arcs = []
-        #     list_of_arg1_arcs = list_of_arg1_arcs[: arg1_ancestors_pre_verb.index(arg_token2) + 1]
-        # else:
-        #     if verb1 or verb2:
-        #         return
-
+    # check if verb was tagged as VERB accidentally
+    if check_verb_tagged_entity(verb1, arg1):
+        return
+    elif check_verb_tagged_entity(verb2, arg2):
+        return
+    
     # its officially verbal, so count, manipulate paths and find verbal paths
     path_pair = manipulate_paths(list_of_arg1_arcs, list_of_arg2_arcs, True)
-    #verbal_path, verbs_count, verb_arcs = find_verbal_path([verb1, verb2], subtype)
+    verbal_path, verbs_count, verb_arcs = find_verbal_path([verb1, verb2], subtype)
     if apply_or_find:
         check_rule(path_pair, verb1, verb2, arg_words, (arg1.id, arg2.id), relations)
     else:
@@ -437,24 +385,23 @@ def per_pair_rules(sentence, sent_id, arg1, arg2, subtype, relations, apply_or_f
         #     for k, v in verb_arcs.items():
         #         g_verb_arcs[k] = v + (g_verb_arcs[k] if k in g_verb_arcs else 0)
         # update_dict_of_dicts(g_verbal_path, verbal_path, subtype, add=[(sentence.span.text, relations[(arg1.id, arg2.id)].bold_text if (arg1.id, arg2.id) in relations else sentence.span.text)])
-        if subtype != 'NO_RELATION':
-            fixed_path_pair = path_pair
-            if (path_pair[1], path_pair[0]) in subtypes_by_rules:
-                fixed_path_pair = (path_pair[1], path_pair[0])
-            update_dict_of_dicts(subtypes_by_rules, fixed_path_pair, subtype)
-            fixed_path_pair = path_pair
-            if (path_pair[1], path_pair[0]) in rules_by_subtype:
-                fixed_path_pair = (path_pair[1], path_pair[0])
-            update_dict_of_dicts(rules_by_subtype, subtype, fixed_path_pair)
-            fixed_path_pair = path_pair
-            if (path_pair[1], path_pair[0]) in subtypes_by_rules_examples:
-                fixed_path_pair = (path_pair[1], path_pair[0])
-            update_dict_of_dicts(subtypes_by_rules_examples, fixed_path_pair, subtype, add=[(sentence.span.text, relations[(arg1.id, arg2.id)].bold_text if (arg1.id, arg2.id) in relations else sentence.span.text)])
-            # verbal[subtype] = (verbal[subtype] + 1) if subtype in verbal else 1
+        fixed_path_pair = path_pair
+        if (path_pair[1], path_pair[0]) in subtypes_by_rules:
+            fixed_path_pair = (path_pair[1], path_pair[0])
+        update_dict_of_dicts(subtypes_by_rules, fixed_path_pair, subtype)
+        fixed_path_pair = path_pair
+        if (path_pair[1], path_pair[0]) in rules_by_subtype:
+            fixed_path_pair = (path_pair[1], path_pair[0])
+        update_dict_of_dicts(rules_by_subtype, subtype, fixed_path_pair)
+        fixed_path_pair = path_pair
+        if (path_pair[1], path_pair[0]) in subtypes_by_rules_examples:
+            fixed_path_pair = (path_pair[1], path_pair[0])
+        update_dict_of_dicts(subtypes_by_rules_examples, fixed_path_pair, subtype, add=[(sentence.span.text, relations[(arg1.id, arg2.id)].bold_text if (arg1.id, arg2.id) in relations else sentence.span.text)])
+        # verbal[subtype] = (verbal[subtype] + 1) if subtype in verbal else 1
 
 
 def find_entities(in_sentence, entity_index, prev_entity_index, entities, sgm_path, sentence):
-    global g_broken_entities_counter
+    global broken_entities_counter
     
     while in_sentence and entity_index < len(entities):
         if entities[entity_index].start < sentence.start:
@@ -463,10 +410,10 @@ def find_entities(in_sentence, entity_index, prev_entity_index, entities, sgm_pa
             in_sentence = False
         else:
             if entities[entity_index].end > sentence.end:
-                g_broken_entities_counter += 1
+                broken_entities_counter += 1
                 if DEBUG:
                     print("%d. Entity was broken by wrong sentence splitting:"
-                          "\n\tFilePath= %s,\n\tEntityID= %s,\n\tSplitedSentence= %s" % (g_broken_entities_counter, sgm_path, entities[entity_index].id, sentence.span.text))
+                          "\n\tFilePath= %s,\n\tEntityID= %s,\n\tSplitedSentence= %s" % (broken_entities_counter, sgm_path, entities[entity_index].id, sentence.span.text))
                 del entities[entity_index]
                 continue
             entity_index += 1
@@ -483,7 +430,7 @@ def break_sgm(path, nlp):
     complete_text = complete_text.replace("/\"", " \"").replace("\"/", "\" ")
     pointer = 0
     ace_indices = 0
-    sentences = []  # list of (sentence, ace_start_position, ace_end_position) elements
+    sentences = []  # list of (sentence, syntax_tree, ace_start_position, ace_end_position) elements
     consumed_text_tag = False
     consumed_text = complete_text
     
@@ -509,7 +456,7 @@ def break_sgm(path, nlp):
                 g_index = ace_indices + spaces_len
                 d = nlp(paragraph)
                 for span in d.sents:
-                    sentences.append(Sentence(span, g_index + paragraph.find(span.text), g_index + paragraph.find(span.text) + len(span.text) - 1))
+                    sentences.append(Sentence(span, g_index + paragraph.find(span.text), g_index + paragraph.find(span.text) + len(span.text) - 1, conllu_stuff.conllu_parse(span.text)))
         
         # found start of interesting text
         if found == "<TEXT>":
@@ -524,6 +471,8 @@ def break_sgm(path, nlp):
 
 
 def per_doc_rules(subtype, nlp, sgm_path, entities, relations, apply_or_find):
+    global broken_relations_counter
+    
     # get sentences from sgm file
     sentences = break_sgm(sgm_path, nlp)
     
@@ -532,6 +481,7 @@ def per_doc_rules(subtype, nlp, sgm_path, entities, relations, apply_or_find):
     entity_index = 0
     relations_found = set()
     for i, sentence in enumerate(sentences):
+        print("%d/%d" % (i, len(sentences)))
         # find entities in sentence
         in_sentence = True
         in_sentence, entity_index, prev_entity_index = find_entities(
@@ -545,23 +495,28 @@ def per_doc_rules(subtype, nlp, sgm_path, entities, relations, apply_or_find):
                 if (arg1.id == arg2.id) or \
                    (apply_or_find and (arg1.type + "-" + arg1.type) not in relation_arg_combos[subtype]):
                         continue
-                if (pair in relations):
-                    per_pair_rules(sentence, i, arg1, arg2, relations[pair].rel_type if (pair in relations) else "NO_RELATION", relations, apply_or_find)
-                    relations_found.add(pair)
+                
+                per_pair_rules(sentence, arg1, arg2, relations[pair].rel_type if (pair in relations) else "NO_RELATION", relations, apply_or_find)
+                relations_found.add(pair)
+        
         prev_entity_index = entity_index
     
     if DEBUG:
         for p in set(relations.keys()) - relations_found:
-            g_broken_relations_counter += 1
+            broken_relations_counter += 1
             print("%d. Relation was broken by wrong sentence splitting:"
-                  "\n\tFilePath= %s,\n\tRelationID= %s" % (g_broken_relations_counter, sgm_path, relations[p].id))
-    
-    return sentences
+                  "\n\tFilePath= %s,\n\tRelationID= %s" % (broken_relations_counter, sgm_path, relations[p].id))
 
 
 def print_rules_statistics(subtype, doc_triplets, apply_or_find):
-    nlp = spacy.load("en_ud_model")
+    print("*****************************************************************************************************\n")
+    import spacy
+    nlp = spacy.load('en_core_web_lg')
+    import time
+    start = time.time()
     for i, doc_triplet in enumerate(doc_triplets):
+        if i % 10 == 1:
+            print("%d/%d %.2f" % (i, len(doc_triplets), time.time() - start))
         per_doc_rules(subtype, nlp, doc_triplet[0], doc_triplet[1], doc_triplet[2], apply_or_find)
     
     if apply_or_find:
@@ -571,47 +526,26 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         print("FPR(other relations): %.2f" % (counters[Counters.FPO] / (counters[Counters.FPO] + counters[Counters.TNO])))
         print("FPR(non relations): %.2f\n" % (counters[Counters.FPN] / (counters[Counters.FPN] + counters[Counters.TNN])))
     else:
-        # TODO: interesting stats to collect for thesis: count of unique paths (and how they distribute?) for each path-type,
-        #   verbal-triggers (but in the one verb case, and when there is more than 1 maybe per index) counts and distributions,
-        
-        
-        with io.open(r"verbal_triggers.dat", "w", encoding="utf-8") as f:
-            json.dump(g_verbal_triggers, f)
-        
-        
-        # # f = io.open(r"verbal_triggers.dat", "w", encoding="utf-8")
-        # # for k, v in g_verbal_triggers.items():
-        # #     f.write("%s\t" % k)
-        # #     for i, (k2, v2) in enumerate(v.items()):
-        # #         if (i + 1) == len(v):
-        # #             f.write("%s %d" % (k2, v2))
-        # #         else:
-        # #             f.write("%s %d\t" % (k2, v2))
-        # #     f.write("\n")
-        # # f.close()
-        # #
-        # # print("Legit verb arcs: %s" % str(g_verb_arcs))
-        # # print("Verbs-count to times-seen: %s" % str({i + 1: count for i, count in enumerate(g_verbs_count)}))
-        # # print("Verbal-NonVerbal ratio:")
-        # # for k, v in verbal.items():
-        # #     print("\t%s- %d:%d" % (k, v, non_verbal[k]))
-        # # print("\nUnique path pairs: %d" % len(subtypes_by_rules))
-        # #
-        # # f = io.open(r"verbal_paths.dat", "w", encoding="utf-8")
-        # # sorted_by_value = sorted(g_verbal_path.items(), key=lambda kv: sum([len(val) for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
-        # # for k, v in sorted_by_value:
-        # #     v_sorted_by_value = sorted(v.items(), key=lambda kv: len(kv[1]), reverse=True)
-        # #     f.write("PathPair=%s~%s\t%d\t%d\n" % (str(k[0]), str(k[1]), sum([len(v2) for k2, v2 in v.items() if k2 != "NO_RELATION"]), len(v_sorted_by_value[0][1])))
-        # #     for v_subtype, v_example_list in v_sorted_by_value:
-        # #         f.write("Subtype=%s\n" % v_subtype)
-        # #         for (orig, bold) in v_example_list:
-        # #             f.write("OrigSentence=%s\n" % orig)
-        # #             f.write("BoldSentence=%s\n" % bold)
-        # #     f.write("\n")
-        # # f.close()
+        # f = io.open(r"verbal_triggers.dat", "w", encoding="utf-8")
+        # for k, v in g_verbal_triggers.items():
+        #     f.write("%s\t" % k)
+        #     for i, (k2, v2) in enumerate(v.items()):
+        #         if (i + 1) == len(v):
+        #             f.write("%s %d" % (k2, v2))
+        #         else:
+        #             f.write("%s %d\t" % (k2, v2))
+        #     f.write("\n")
+        # f.close()
         #
-        # f = io.open(r"nvp_subtypes_by_rules_examples.dat", "w", encoding="utf-8")
-        # sorted_by_value = sorted(subtypes_by_rules_examples.items(), key=lambda kv: sum([len(val) for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
+        # print("Legit verb arcs: %s" % str(g_verb_arcs))
+        # print("Verbs-count to times-seen: %s" % str({i + 1: count for i, count in enumerate(g_verbs_count)}))
+        # print("Verbal-NonVerbal ratio:")
+        # for k, v in verbal.items():
+        #     print("\t%s- %d:%d" % (k, v, non_verbal[k]))
+        # print("\nUnique path pairs: %d" % len(subtypes_by_rules))
+        #
+        # f = io.open(r"verbal_paths.dat", "w", encoding="utf-8")
+        # sorted_by_value = sorted(g_verbal_path.items(), key=lambda kv: sum([len(val) for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
         # for k, v in sorted_by_value:
         #     v_sorted_by_value = sorted(v.items(), key=lambda kv: len(kv[1]), reverse=True)
         #     f.write("PathPair=%s~%s\t%d\t%d\n" % (str(k[0]), str(k[1]), sum([len(v2) for k2, v2 in v.items() if k2 != "NO_RELATION"]), len(v_sorted_by_value[0][1])))
@@ -622,43 +556,99 @@ def print_rules_statistics(subtype, doc_triplets, apply_or_find):
         #             f.write("BoldSentence=%s\n" % bold)
         #     f.write("\n")
         # f.close()
-        #
-        # f = io.open(r"nvp_rules_by_subtype.dat", "w", encoding="utf-8")
-        # for k, v in rules_by_subtype.items():
-        #     sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
-        #     f.write("%s\t" % str(k))
-        #     for i, (k2, v2) in enumerate(sorted_by_value):
-        #         if (i + 1) == len(v):
-        #             f.write("%s:%d" % (k2, v2))
-        #         else:
-        #             f.write("%s:%d\t" % (k2, v2))
-        #     f.write("\n")
-        # f.close()
-        #
-        # d = {}
-        # f = io.open(r"nvp_subtypes_by_rules.dat", "w", encoding="utf-8")
-        # sorted_by_value = sorted(subtypes_by_rules.items(), key=lambda kv: sum([val for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
-        # for k, v in sorted_by_value:
-        #     if len(v) == 1 and "NO_RELATION" in v:
-        #         continue
-        #     v_sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
-        #     f.write("%s\t" % str(k))
-        #     for i, (k2, v2) in enumerate(v_sorted_by_value):
-        #         if (i + 1) == len(v):
-        #             f.write("%s:%d" % (k2, v2))
-        #         else:
-        #             f.write("%s:%d\t" % (k2, v2))
-        #     f.write("\n")
-        #     d[k] = sum(v.values()) - (v["NO_RELATION"] if "NO_RELATION" in v else 0)
-        # f.close()
-        #
-        # f = io.open(r"nvp_ordered_rules.dat", "w", encoding="utf-8")
-        # sorted_by_value = sorted(d.items(), key=lambda kv: kv[1], reverse=True)
-        # for (k, v) in sorted_by_value:
-        #     f.write("%s: %d\n" % (k, v))
+        
+        f = io.open(r"subtypes_by_rules_examples.dat", "w", encoding="utf-8")
+        sorted_by_value = sorted(subtypes_by_rules_examples.items(), key=lambda kv: sum([len(val) for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
+        for k, v in sorted_by_value:
+            v_sorted_by_value = sorted(v.items(), key=lambda kv: len(kv[1]), reverse=True)
+            f.write("PathPair=%s~%s\t%d\t%d\n" % (str(k[0]), str(k[1]), sum([len(v2) for k2, v2 in v.items() if k2 != "NO_RELATION"]), len(v_sorted_by_value[0][1])))
+            for v_subtype, v_example_list in v_sorted_by_value:
+                f.write("Subtype=%s\n" % v_subtype)
+                for (orig, bold) in v_example_list:
+                    f.write("OrigSentence=%s\n" % orig)
+                    f.write("BoldSentence=%s\n" % bold)
+            f.write("\n")
+        f.close()
+        
+        f = io.open(r"rules_by_subtype.dat", "w", encoding="utf-8")
+        for k, v in rules_by_subtype.items():
+            sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            f.write("%s\t" % str(k))
+            for i, (k2, v2) in enumerate(sorted_by_value):
+                if (i + 1) == len(v):
+                    f.write("%s:%d" % (k2, v2))
+                else:
+                    f.write("%s:%d\t" % (k2, v2))
+            f.write("\n")
+        f.close()
+        
+        d = {}
+        f = io.open(r"subtypes_by_rules.dat", "w", encoding="utf-8")
+        sorted_by_value = sorted(subtypes_by_rules.items(), key=lambda kv: sum([val for key, val in kv[1].items() if key != "NO_RELATION"]), reverse=True)
+        for k, v in sorted_by_value:
+            if len(v) == 1 and "NO_RELATION" in v:
+                continue
+            v_sorted_by_value = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            f.write("%s\t" % str(k))
+            for i, (k2, v2) in enumerate(v_sorted_by_value):
+                if (i + 1) == len(v):
+                    f.write("%s:%d" % (k2, v2))
+                else:
+                    f.write("%s:%d\t" % (k2, v2))
+            f.write("\n")
+            d[k] = sum(v.values()) - (v["NO_RELATION"] if "NO_RELATION" in v else 0)
+        f.close()
+        
+        f = io.open(r"ordered_rules.dat", "w", encoding="utf-8")
+        sorted_by_value = sorted(d.items(), key=lambda kv: kv[1], reverse=True)
+        for (k, v) in sorted_by_value:
+            f.write("%s: %d\n" % (k, v))
 
 
 ################################################################################################
+
+
+def print_colored_relations(relations, arg_type_pair):
+    for i, relation in enumerate(relations):
+        if not arg_type_pair or relation.arg1_type + "-" + relation.arg2_type == arg_type_pair:
+            print(str(i + 1) + '(' + relation.data_type + ')/(' + relation.arg1_type + "-" + relation.arg2_type + '). ' + relation.colored_text)
+    print("\n")
+
+
+def print_type(cur_type, subtype):
+    print("*****************************************************************************************************\n")
+    print("Showing all search result for type=%s~subtype=%s:" % (cur_type, subtype))
+    print("Legend: \033[1;32;0mhead of Arg-1\033[0m. \033[1;31;0mhead of Arg-2\033[0m.")
+    print()
+
+
+# TODO - fix
+# def extract_metonymy(relation, entities, data_type, path):
+#     global output_counter
+#     head_start = 0
+#     head_start2 = 0
+#     head_end = 0
+#     head_end2 = 0
+#
+#     output_counter += 1
+#
+#     for cur_child in relation:
+#         if cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-1':
+#             head_start, head_end = entities[cur_child.attrib['REFID']]
+#         elif cur_child.tag == 'relation_argument' and cur_child.attrib['ROLE'] == 'Arg-2':
+#             head_start2, head_end2 = entities[cur_child.attrib['REFID']]
+#
+#     sgm = open(path.replace('apf.xml', 'sgm')).read()
+#     sgm = re.sub('<.*?>', '', sgm)
+#     first = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start): head_start],
+#                                                       sgm[head_start: head_end + 1],
+#                                                       sgm[head_end + 1: sgm.find('\n', head_end, len(sgm))])
+#     second = "{0}\033[1;31;0m{1}\033[0m{2}".format(sgm[sgm.rfind('\n', 0, head_start2): head_start2],
+#                                                        sgm[head_start2: head_end2 + 1],
+#                                                        sgm[head_end2 + 1: sgm.find('\n', head_end2, len(sgm))])
+#
+#     print(str(output_counter) + '(' + data_type + '). ' + "..." + first.replace('\n', '') + "..." + " <--> " + "..." + second.replace('\n', '') + "...")
+#     return
 
 
 def extract_relations(path, relation_mention, entities, rel_type, data_type, relations):
@@ -686,7 +676,7 @@ def extract_relations(path, relation_mention, entities, rel_type, data_type, rel
             head_start2, head_end2, arg2_type = entities[sub_rel_mention.attrib['REFID']]
             arg2_id = sub_rel_mention.attrib['REFID']
     
-    # assign indices and colors according to argument order
+    # assign indices and colores according to argument order
     first_head_start, last_head_start, first_head_end, last_head_end, first_color, second_color, first_color_jup, second_color_jup =                \
         (head_start, head_start2, head_end, head_end2, "\033[1;32;0m", "\033[1;31;0m", "**<span style='color:green'>", "**<span style='color:red'>")\
         if head_start < head_start2 else                                                                                                            \
@@ -773,7 +763,7 @@ def extract_doc(root, data_type, path):
     return ordered_entities, relations_by_pair
 
 
-def walk_all(path):
+def walk_all(subtype, path, wanted_relation_list, doc_triplets):
     # loop on all data files, and choose only apf.xml from timex2norm
     for subdir, dirs, files in os.walk(path):
         if 'timex2norm' in subdir:
@@ -790,9 +780,9 @@ def walk_all(path):
                     # and keep copy of SUBTYPE type relations.
                     ordered_entities, relations_by_pair = extract_doc(root, data_type, subdir + os.sep + filename)
                     doc_triplets.append(((subdir + os.sep + filename).replace('apf.xml', 'sgm'), ordered_entities, relations_by_pair))
-    
-    with open("ace05_extracted.pkl", "wb") as f:
-        pkl.dump(doc_triplets, f)
+                    for k, relation in relations_by_pair.items():
+                        if relation.rel_type == subtype:
+                            wanted_relation_list.append(relation)
 
 
 def get_subtype():
@@ -826,28 +816,52 @@ def print_usage():
     print("Usage: main.py path_to_data [subtype|None]\n"
           "'None' means Metonymy.\n"
           "If you omit the subtype(or None), you will be prompt to input it afterwards.")
-    
 
-def extract_paths():
+
+def main(path, cmd_subtype=None, arg_type_pair=None):
+    import time
+    start = time.time()
+    
     # getting subtype from cmd param or user input
-    # if not cmd_subtype:
-    #     subtype = get_subtype()
-    # else:
-    #     subtype = cmd_subtype if cmd_subtype != 'None' else None
-
-    with open("ace05_extracted.pkl", "rb") as f:
-        doc_triplets = pkl.load(f)
+    if not cmd_subtype:
+        subtype = get_subtype()
+    else:
+        subtype = cmd_subtype if cmd_subtype != 'None' else None
     
-    print_rules_statistics(doc_triplets)
+    # validate subtype and find corresponding Type
+    meta_type = ""
+    found = False
+    for i, (cur_type, subtypes) in relation_types.items():
+        if subtype in subtypes:
+            meta_type = cur_type
+            found = True
+    if not found:
+        print_usage()
+        return
+    
+    # iterate and extract everything from documents
+    doc_triplets = []
+    relations = []
+    walk_all(subtype, path, relations, doc_triplets)
+    
+    # print (and execute) all missions
+    #print_type(meta_type, str(subtype))
+    #print_colored_relations(relations, arg_type_pair)
+    print_rules_statistics(subtype, doc_triplets, False)  # TODO - apply_or_find
+    #print_web_dependencies(relations)
+    print("Run time: %.2f" % (time.time() - start))
 
 
 if __name__ == "__main__":
     # Usage: main.py path_to_data [subtype|None] (None for Metonymy)
     # 2 params means no subtype added
     if len(sys.argv) == 2:
-        walk_all(sys.argv[1])
+        main(sys.argv[1])
     # 3 params means including subtype
     elif len(sys.argv) == 3:
-        extract_paths()
+        main(sys.argv[1], sys.argv[2])
+    # 4 params means including subtype and arg_type_pair
+    elif len(sys.argv) == 4:
+        main(sys.argv[1], sys.argv[2], sys.argv[3])
     else:
         print_usage()
